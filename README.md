@@ -180,7 +180,7 @@ python scripts/run_benchmark.py --synthetic --compare-personal   # 5개 모델 L
 python scripts/demo_pipeline.py                 # 30초 calibration → 프로필 → Replay 추론
 ```
 
-결과는 `outputs/benchmark/`(Git 제외)에 저장됩니다. 입력 형식은 [공통 입력 규약](docs/input-spec.md), 모델 설명은 [후보 모델](docs/models.md)을 참고하세요. 보드 런타임과 설치 방법은 보드가 정해지면 추가합니다. 협업 방법은 [협업 가이드](CONTRIBUTING.md)를 참고하세요.
+결과는 `outputs/benchmark/`(Git 제외)에 저장됩니다. 입력 형식은 [공통 입력 규약](docs/input-spec.md), 모델 설명은 [후보 모델](docs/models.md), 졸음 라벨을 만드는 교사 모델은 [교사 모델](docs/teacher.md)을 참고하세요. 보드 런타임과 설치 방법은 보드가 정해지면 추가합니다. 협업 방법은 [협업 가이드](CONTRIBUTING.md)를 참고하세요.
 
 ## 데이터 및 라이선스
 

@@ -126,3 +126,19 @@ CSV 대신 `.npz`(배열 `ecg`, `ppg`, `labels`)도 받을 수 있습니다. 모
 - 윈도우 길이 (현재 30초 / 10초 이동, 임시)
 - 기업 제공 PPG 보정 로직 적용 위치
 - 샘플 누락 판단 기준이 될 타임스탬프 전송 방식 (Arduino → Pi)
+
+## 9. v0.3 추가 사항 (선택 필드, 2026-11-05)
+
+모두 선택이며 없으면 v0.2 와 똑같이 동작합니다. 로더는 모르는 필드를 `Recording.meta` 로 넘깁니다.
+
+| 필드 / 파일 | 의미 |
+| --- | --- |
+| `channels` | 실제 있는 채널 목록. 없으면 `["ecg", "ppg"]`. 교사 학습 데이터처럼 ECG 만 있으면 `["ecg"]` |
+| `drowsiness_inducer` | `sleep_deprivation` / `prolonged_driving` / `mental_fatigue` / `none`. 평가 보고용, 모델 입력 아님 |
+| `baseline_range` | 기준 구간 [시작 s, 끝 s]. 세션 앞부분이 아닌 기준 구간 (예: 연습 주행 뒤 5분) |
+| `baseline_per_session` | `true` 면 세션마다 자기 기준 구간 (녹화 날짜가 다를 때) |
+| `mains_hz` | 전원 주파수 50/60. 있으면 노치 필터를 그 값으로 |
+| `labels_orig.csv` | 원 라벨 + 측정 시각 (KSS 값, 피로 단계, 이벤트 시각). 이진 기준을 바꿔도 재변환 불필요 |
+| `labels_window.csv` | 교사가 만든 창 단위 라벨 (`t_start, label`). 학생 창과 `t_start` 로 1:1 |
+
+`write_session()`(`driver_state.data_io`)으로 이 구조를 쓸 수 있습니다. 신호는 `data.npz`(float32)로 저장합니다.
