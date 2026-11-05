@@ -2,7 +2,6 @@
 
     python scripts/run_benchmark.py --synthetic                     # 개인화 입력으로 비교
     python scripts/run_benchmark.py --synthetic --compare-personal  # 개인화 없음 vs 있음
-    python scripts/run_benchmark.py --synthetic --binary            # 이진 백업 라벨
     python scripts/run_benchmark.py --synthetic --models mlp xgboost
 
 공개 데이터셋 로더가 생기면 Recording 리스트를 만들어 build_dataset() 에 넘기면 된다.
@@ -31,7 +30,6 @@ def main() -> None:
     ap.add_argument("--subjects", type=int, default=6)
     ap.add_argument("--seconds-per-class", type=float, default=180.0)
     ap.add_argument("--models", nargs="*", default=None)
-    ap.add_argument("--binary", action="store_true", help="이진 백업 라벨로 평가")
     ap.add_argument("--no-personal", action="store_true", help="개인화 특징 없이 평가")
     ap.add_argument("--compare-personal", action="store_true", help="개인화 없음/있음 둘 다 평가")
     ap.add_argument("--out", default=str(ROOT / "outputs/benchmark"))
@@ -59,8 +57,7 @@ def main() -> None:
         s.use_personal = use_personal
         tag = "personal" if use_personal else "no_personal"
         print(f"\n=== {tag} (features {len(s.feature_names)}개) ===")
-        res = run_benchmark(ws, s, model_cfgs, profiles, n_folds=cfg["evaluation"]["n_folds"], seed=seed,
-                            label_mode="binary" if args.binary else "multi")
+        res = run_benchmark(ws, s, model_cfgs, profiles, n_folds=cfg["evaluation"]["n_folds"], seed=seed)
         (out / f"results_{tag}.json").write_text(json.dumps(res, ensure_ascii=False, indent=2), encoding="utf-8")
         md_all.append(f"### {tag}\n\n" + summary_markdown(res))
     md = "\n\n".join(md_all)

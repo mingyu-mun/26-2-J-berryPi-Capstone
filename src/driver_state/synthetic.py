@@ -11,11 +11,10 @@ import numpy as np
 from .data import Recording
 
 # 클래스별 (심박수 변화 bpm, HRV 배율, 불규칙 박동 확률, 조향 흔들림 배율). 임의값.
+# 0 = 정상, 1 = 졸음 (심박 감소·HRV 증가 방향으로 가정)
 _CLASS_EFFECT = {
-    0: (0.0, 1.3, 0.00, 1.0),
-    1: (4.0, 1.0, 0.00, 1.2),
-    2: (-6.0, 0.7, 0.00, 1.8),
-    3: (14.0, 0.5, 0.08, 2.5),
+    0: (2.0, 0.9, 0.00, 1.0),
+    1: (-7.0, 1.6, 0.00, 1.8),
 }
 
 
@@ -83,13 +82,13 @@ def make_recording(subject_id: str | None, segments: list[tuple[int | None, floa
 
 
 def make_subject(subject_id: str | None, seconds_per_class: float = 180.0, rest_sec: float = 30.0,
-                 n_classes: int = 4, seed: int = 0) -> Recording:
-    """참가자 1명: 앞 rest_sec 휴식(미라벨) + 클래스 n개를 무작위 순서로 seconds_per_class 씩."""
+                 n_classes: int = 2, seed: int = 0) -> Recording:
+    """참가자 1명: 앞 rest_sec 휴식(미라벨) + (정상, 졸음) 을 무작위 순서로 seconds_per_class 씩 두 번."""
     rng = np.random.default_rng(seed)
     base_hr = rng.uniform(60, 80)       # 사람마다 다른 평소 심박수 → 개인화가 필요한 이유
     base_hrv = rng.uniform(0.8, 1.2)
     segs = ([(None, rest_sec)] if rest_sec > 0 else []) + \
-        [(int(k), seconds_per_class) for k in rng.permutation(n_classes)]
+        [(int(k), seconds_per_class) for _ in range(2) for k in rng.permutation(n_classes)]
     return make_recording(subject_id, segs, base_hr, base_hrv, rng)
 
 

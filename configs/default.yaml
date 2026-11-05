@@ -1,5 +1,5 @@
 # 공통 입력 규약 + 후보 모델 기본 설정.
-# 값의 의미는 docs/input-spec.md 참고. 미확정 항목(라벨 정의, 윈도우 길이)은 임시값이다.
+# 값의 의미는 docs/input-spec.md, docs/state-machine.md 참고. 윈도우 길이는 아직 임시값이다.
 
 input:
   fs: 100.0              # 공통 샘플링 주기 [Hz]
@@ -17,6 +17,7 @@ input:
     ppg_band: [0.5, 8.0]
     flat_std: 1.0e-6
     max_clip_ratio: 0.05
+    max_flat_run_sec: 1.0      # 값이 1초 넘게 그대로 멈추면 품질 불량 (부분 접촉 불량·전송 끊김)
   baseline:
     calibration_sec: 30.0      # 시연 직전 시연자별 비주행 측정
     min_ibi_count: 20
@@ -24,10 +25,19 @@ input:
     min_windows_for_sigma_s: 3
     train_invalid_rate: 0.2    # 학습 시 기준 무효 처리 비율 (미등록 사용자 대비)
   label:
-    n_classes: 4
-    names: ["매우 양호", "양호", "피로", "상태 이상"]   # 임시 명칭
+    n_classes: 2               # 11/5 확정: 분류기는 정상(0) / 졸음(1)
+    names: ["정상", "졸음"]
     min_label_purity: 0.8
-    binary_map: {0: 0, 1: 0, 2: 1, 3: 1}             # 이진 백업: 정상(0,1) / 주의(2,3)
+  state_machine:               # 추론 후단: 윈도우 판정(-1) + 졸음 누적 3단계 (docs/state-machine.md)
+    gate_min_ibi: 20           # 윈도우(30초) 안 유효 RR 간격 최소 개수
+    gate_max_hr_ppg_diff: 10.0 # |ECG HR - PPG 맥박수| 상한 [bpm]
+    alpha: 0.5                 # 누적 점수 EMA 계수
+    on_threshold: 0.6
+    off_threshold: 0.4
+    escalate_sec: 10.0         # 시연용으로 짧게: 10초 누적마다 한 단계 상승
+    recover_sec: 10.0          # 10초 누적마다 한 단계 하강
+    invalid_hold_sec: 60.0     # -1 판정이 60초 연속(실제 끊김 약 30초)이면 '측정 불가' + 누적 초기화
+    level_names: ["정상", "주의", "졸음"]
 
 models:
   mlp:
