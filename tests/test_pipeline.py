@@ -211,3 +211,23 @@ def test_demo_inference_flow(data, tmp_path):
     assert len(res) == 4 and all(r.baseline_valid for r in res)
     pred.set_profile(None)   # 미등록 사용자
     assert not any(r.baseline_valid for r in pred.predict_recording(replay))
+
+
+def test_handoff_folder_loader(tmp_path):
+    import json
+    from driver_state.data_io import load_tree
+    rng = np.random.default_rng(0)
+    rec = make_recording("User1", [(None, 30.0), (0, 60.0)], 72, 1.0, rng)
+    d = tmp_path / "jberry_sensor" / "User1" / "s1"
+    d.mkdir(parents=True)
+    for k in ("ecg", "ppg"):
+        np.savetxt(d / f"{k}.csv", rec.signals[k], header="value", comments="", delimiter=",")
+    np.savetxt(d / "labels.csv", rec.labels, header="label", comments="", fmt="%d")
+    (d / "meta.json").write_text(json.dumps({
+        "dataset_id": "jberry_sensor", "subject_id": "User1", "session_id": "s1",
+        "t0": "2026-11-20T14:03:12+09:00", "fs": {"ecg": 250, "ppg": 50}, "label_fs": 20,
+        "is_rest": False, "prefiltered": False}))
+    (loaded,) = load_tree(tmp_path)
+    assert loaded.subject_id == "User1" and loaded.fs["ecg"] == 250
+    ws, profiles = build_dataset([loaded], InputSpec())
+    assert profiles["User1"].valid and len(ws) > 0

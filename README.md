@@ -143,6 +143,7 @@ ECG / PPG + 차량 CAN (실시간 또는 파일 Replay)
 │   ├── spec.py                   # 채널·전처리·윈도우·특징·Baseline·라벨 규약
 │   ├── preprocessing.py          # 노치·anti-aliasing·리샘플·대역통과·품질 검사
 │   ├── data.py                   # Recording → 전처리 → 윈도우
+│   ├── data_io.py                # 데이터 팀 전달 폴더 → Recording
 │   ├── features.py               # HRV·PPG 특징 추출
 │   ├── baseline.py               # 개인 Baseline 프로필·개인화 특징
 │   ├── normalization.py          # 정규화 파이프라인 (JSON 저장)
@@ -158,6 +159,7 @@ ECG / PPG + 차량 CAN (실시간 또는 파일 Replay)
     ├── context-notes.md
     ├── data-and-model.md
     ├── input-spec.md             # 공통 입력 규약
+    ├── data-handoff.md           # 데이터 팀 전달 규약
     └── models.md                 # 후보 모델 설명
 ```
 
