@@ -1,0 +1,39 @@
+# 공통 입력 규약 + 후보 모델 기본 설정.
+# 값의 의미는 docs/input-spec.md 참고. 미확정 항목(라벨 정의, 윈도우 길이)은 임시값이다.
+
+input:
+  fs: 100.0              # 공통 샘플링 주기 [Hz]
+  window_sec: 30.0       # 윈도우 길이 [s] (HRV 계산 최소 길이 고려)
+  stride_sec: 10.0       # 윈도우 이동 = 상태 갱신 주기 [s]
+  use_can: false         # 기본은 생체 단독. CAN 은 후기 융합(late fusion) 예정
+  sequence_bio_norm: per_window
+  feature_norm: global
+  label:
+    n_classes: 4
+    names: ["매우 양호", "양호", "피로", "상태 이상"]   # 임시 명칭
+    min_label_purity: 0.8
+    binary_map: {0: 0, 1: 0, 2: 1, 3: 1}             # 이진 백업: 정상(0,1) / 주의(2,3)
+
+models:
+  mlp:
+    hidden: [64, 32]
+    dropout: 0.2
+    epochs: 80
+  cnn_bilstm:
+    conv: [16, 32, 32]
+    kernels: [15, 7, 5]
+    pools: [4, 4, 2]
+    lstm_hidden: 32
+    epochs: 40
+  random_forest:
+    n_estimators: 200
+  xgboost:
+    n_estimators: 300
+    max_depth: 4
+  lightgbm:
+    n_estimators: 300
+    num_leaves: 15
+
+evaluation:
+  n_folds: null          # null = LOSO (운전자 한 명씩 테스트)
+  seed: 0
