@@ -1,0 +1,34 @@
+# 교사 모델 설정. 값의 의미는 docs/teacher.md 참고.
+teacher:
+  fs: 100.0
+  window_sec: 30.0          # 학생과 같아야 함
+  stride_sec: 10.0          # 학생과 같아야 함
+  scales: [30, 120, 300]
+  baseline_sec: 300.0       # 교사 기준 구간 5분 (학생은 30초)
+  min_baseline_sec: 60.0
+  min_rr_per_window: 20
+  max_abnormal_ratio: 0.10
+  train_invalid_rate: 0.2
+
+labels:                     # 어댑터의 원 라벨 → 이진 변환
+  kss_drowsy_min: 7
+  kss_alert_max: 5
+  fatigue_alert: [0]
+  fatigue_drowsy: [3, 4]
+  event_drowsy_sec: 60
+  event_alert_gap_sec: 600
+
+models:                     # 후보별 덮어쓸 파라미터
+  lgbm: {}
+  lgbm_nopers: {}
+  rrnet: {epochs: 30, patience: 5, batch_size: 256}
+
+evaluation:
+  models: [rule, lgbm, lgbm_nopers, rrnet, ensemble]
+  seed: 0
+  val_frac: 0.2
+  subject_folds: 5          # 보조 평가 (데이터셋 혼합, 참가자 단위)
+
+tau:
+  drowsy_precision: 0.85
+  alert_precision: 0.90

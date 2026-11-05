@@ -7,6 +7,7 @@ xgboost>=2.0
 lightgbm>=4.0
 torch>=2.2
 joblib>=1.3
+pyarrow>=14.0        # 교사 중간 표 (parquet)
 pytest>=8.0
 # 선택: 보드 이식용 ONNX 내보내기
 onnx>=1.15

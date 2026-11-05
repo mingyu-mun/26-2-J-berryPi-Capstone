@@ -26,6 +26,8 @@ class Recording:
     is_rest:     휴식(기준 측정) 녹화면 True. 있으면 이 녹화가 그 참가자의 기준 세션이 된다.
     prefiltered: 데이터 담당이 노치·대역통과 필터를 이미 적용했으면 True.
     dataset_id:  여러 공개 데이터셋을 합칠 때 출처 구분용.
+    meta:        meta.json 의 나머지 필드 (v0.3 선택 필드: channels, drowsiness_inducer, baseline_range,
+                 baseline_per_session, mains_hz 등). 모델 입력이 아니라 기록·분할·보고용.
     """
 
     subject_id: str | None
@@ -38,6 +40,7 @@ class Recording:
     is_rest: bool = False
     prefiltered: bool = False
     dataset_id: str = "default"
+    meta: dict = field(default_factory=dict)
 
     @property
     def group(self) -> str:
