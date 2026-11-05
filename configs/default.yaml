@@ -5,7 +5,7 @@ input:
   fs: 100.0              # 공통 샘플링 주기 [Hz]
   window_sec: 30.0       # 윈도우 길이 [s] (HRV 계산 최소 길이 고려)
   stride_sec: 10.0       # 윈도우 이동 = 상태 갱신 주기 [s]
-  use_can: false         # 기본은 생체 단독. CAN 은 후기 융합(late fusion) 예정
+  use_can: false         # 11/5 결정: 시연 모델은 생체 단독 고정, CAN 은 후순위
   sequence_bio_norm: per_window
   feature_norm: global
   label:
