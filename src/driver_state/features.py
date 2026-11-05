@@ -47,7 +47,7 @@ def _ibi_stats(peaks: np.ndarray, fs: float) -> tuple[float, float, float, float
 
 
 def window_features(win: np.ndarray, channels: tuple[str, ...], spec: InputSpec) -> np.ndarray:
-    """윈도우 1개 (C, T) → 특징 벡터 (F,). 순서는 spec.feature_names 와 같다."""
+    """윈도우 1개 (C, T) → 특징 벡터 (F,). 순서는 spec.base_feature_names 와 같다."""
     fs = spec.fs
     ch = {c: win[i].astype(np.float64) for i, c in enumerate(channels)}
     hr, rr, sdnn, rmssd, pnn50 = _ibi_stats(detect_ecg_peaks(ch["ecg"], fs), fs)
@@ -60,9 +60,16 @@ def window_features(win: np.ndarray, channels: tuple[str, ...], spec: InputSpec)
     return np.asarray(out, dtype=np.float64)
 
 
+def valid_ibi_count(ecg: np.ndarray, fs: float) -> int:
+    """유효 범위(0.3~2.0초) RR 간격 개수. Baseline 품질 검사에 사용."""
+    ibi = np.diff(detect_ecg_peaks(ecg, fs)) / fs
+    return int(np.sum((ibi >= _MIN_IBI) & (ibi <= _MAX_IBI)))
+
+
 def extract_features(ws: WindowSet, spec: InputSpec) -> np.ndarray:
-    """WindowSet → (N, F) float32. NaN 은 그대로 둔다 (정규화 단계에서 처리)."""
-    F = len(spec.feature_names)
+    """WindowSet → 생체(·CAN) 특징 (N, F) float32. 개인화 특징은 baseline.py 에서 붙인다.
+    NaN 은 그대로 둔다 (정규화 단계에서 처리)."""
+    F = len(spec.base_feature_names)
     assert F == len(ECG_FEATURES) + len(PPG_FEATURES) + (len(CAN_FEATURES) if spec.use_can else 0)
     if len(ws) == 0:
         return np.zeros((0, F), np.float32)

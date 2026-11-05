@@ -1,11 +1,13 @@
 """후보 모델 비교 평가: 운전자 단위 분리(LOSO / GroupKFold).
 
 각 fold 에서
-1. 테스트 subject 를 떼어 두고,
-2. 남은 subject 중 1명을 검증용(early stopping)으로 떼고,
-3. InputPipeline 을 학습 subject 로만 fit → 학습·검증·테스트에 같은 변환 적용,
-4. 5개 모델을 같은 입력으로 학습·평가한다.
-특징 추출은 fold 와 무관(윈도우 단위 계산)하므로 한 번만 계산해 재사용한다.
+1. 테스트 참가자를 떼어 두고,
+2. 남은 참가자 중 1명을 검증용(early stopping)으로 떼고,
+3. InputPipeline 을 학습 참가자로만 fit (정규화 통계·sigma_pop) → 학습·검증·테스트에 같은 변환,
+4. 학습셋만 일부 윈도우의 기준을 무효 처리(train_invalid_rate)해 미등록 사용자 상황도 학습,
+5. 5개 모델을 같은 입력으로 학습·평가한다.
+기준 구간 윈도우는 baseline.build_dataset 에서 이미 빠져 있고, 테스트 참가자는 자기 프로필만 쓴다.
+생체 특징 추출은 fold 와 무관(윈도우 단위 계산)하므로 한 번만 계산해 재사용한다.
 """
 from __future__ import annotations
 
@@ -16,7 +18,8 @@ from sklearn.metrics import accuracy_score, confusion_matrix, f1_score
 
 from .data import WindowSet
 from .features import extract_features
-from .models import build_model
+from .baseline import Profile
+from .models import build_model, model_input
 from .normalization import InputPipeline
 from .spec import InputSpec
 
@@ -33,7 +36,7 @@ def subject_folds(groups: np.ndarray, n_folds: int | None, seed: int = 0):
 
 def latency_ms(model, X: np.ndarray, repeats: int = 50) -> float:
     """윈도우 1개(batch=1) 추론 시간 중앙값 [ms]. PC 기준값이며 보드 측정은 별도."""
-    x1 = X[:1]
+    x1 = tuple(a[:1] for a in X) if isinstance(X, tuple) else X[:1]
     model.predict_proba(x1)   # warm-up
     ts = []
     for _ in range(repeats):
@@ -44,8 +47,13 @@ def latency_ms(model, X: np.ndarray, repeats: int = 50) -> float:
 
 
 def run_benchmark(ws: WindowSet, spec: InputSpec, model_cfgs: dict[str, dict],
-                  n_folds: int | None = None, seed: int = 0, label_mode: str = "multi",
-                  log=print) -> dict:
+                  profiles: dict[str, Profile] | None = None, n_folds: int | None = None, seed: int = 0,
+                  label_mode: str = "multi", log=print) -> dict:
+    keep = ws.y >= 0
+    if spec.drop_bad_quality:
+        keep &= ws.quality
+    n_bad = int((~ws.quality & (ws.y >= 0)).sum())
+    ws = ws.subset(np.where(keep)[0])
     y_all = ws.y.copy()
     n_classes = spec.label.n_classes
     if label_mode == "binary":
@@ -64,23 +72,25 @@ def run_benchmark(ws: WindowSet, spec: InputSpec, model_cfgs: dict[str, dict],
         tr_idx = np.where(~test_mask & ~val_mask)[0]
         va_idx, te_idx = np.where(val_mask)[0], np.where(test_mask)[0]
 
-        pipe = InputPipeline(spec).fit(ws.subset(tr_idx), feats_all[tr_idx])
-        inp = {k: pipe.transform(ws.subset(idx), feats_all[idx])
+        pipe = InputPipeline(spec).fit(ws.subset(tr_idx), feats_all[tr_idx], profiles)
+        rate = spec.baseline.train_invalid_rate if spec.use_personal else 0.0
+        inp = {k: pipe.transform(ws.subset(idx), feats_all[idx], profiles,
+                                 invalid_rate=rate if k == "tr" else 0.0, seed=seed + fi)
                for k, idx in (("tr", tr_idx), ("va", va_idx), ("te", te_idx))}
         log(f"[fold {fi}] test={sorted(set(ws.groups[te_idx]))} val={val_sub} "
             f"n_train={len(tr_idx)} n_val={len(va_idx)} n_test={len(te_idx)}")
 
         for name, params in model_cfgs.items():
             m = build_model(name, n_classes, seed=seed, **(params or {}))
-            kind = m.input_kind
+            X = {k: model_input(v, m.input_kind) for k, v in inp.items()}
             t0 = time.perf_counter()
-            m.fit(inp["tr"][kind], y_all[tr_idx], inp["va"][kind], y_all[va_idx])
+            m.fit(X["tr"], y_all[tr_idx], X["va"], y_all[va_idx])
             fit_s = time.perf_counter() - t0
-            pred = m.predict(inp["te"][kind])
+            pred = m.predict(X["te"])
             f1 = f1_score(y_all[te_idx], pred, average="macro", labels=labels, zero_division=0)
             r = per_model[name]
             r["y_true"].append(y_all[te_idx]); r["y_pred"].append(pred); r["fold_f1"].append(f1)
-            r["latency_ms"].append(latency_ms(m, inp["te"][kind]))
+            r["latency_ms"].append(latency_ms(m, X["te"]))
             r["size_bytes"].append(m.size_bytes())
             log(f"    {name:<14} macroF1={f1:.3f}  fit={fit_s:.1f}s")
 
@@ -97,7 +107,10 @@ def run_benchmark(ws: WindowSet, spec: InputSpec, model_cfgs: dict[str, dict],
             "latency_ms_batch1": float(np.median(r["latency_ms"])),
             "model_size_kb": float(np.median(r["size_bytes"]) / 1024),
         }
-    return {"n_windows": int(len(ws)), "n_subjects": int(len(np.unique(ws.groups))),
+    n_valid = sum(1 for p in (profiles or {}).values() if p.valid)
+    return {"n_windows": int(len(ws)), "n_bad_quality_dropped": n_bad,
+            "n_subjects": int(len(np.unique(ws.groups))), "n_valid_profiles": n_valid,
+            "use_personal": spec.use_personal, "n_features": len(spec.feature_names),
             "n_classes": n_classes, "label_mode": label_mode, "models": summary}
 
 

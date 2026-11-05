@@ -6,8 +6,23 @@ input:
   window_sec: 30.0       # 윈도우 길이 [s] (HRV 계산 최소 길이 고려)
   stride_sec: 10.0       # 윈도우 이동 = 상태 갱신 주기 [s]
   use_can: false         # 11/5 결정: 시연 모델은 생체 단독 고정, CAN 은 후순위
+  use_personal: true     # 개인 Baseline 대비 특징 7개 사용 (features 15개)
   sequence_bio_norm: per_window
   feature_norm: global
+  drop_bad_quality: true # 품질 불량 윈도우는 학습·평가에서 제외
+  preprocess:
+    notch_hz: 60.0             # 전원 잡음
+    antialias_ratio: 0.4       # 다운샘플 전 저역통과 = 0.4 * fs (40 Hz)
+    ecg_band: [0.5, 40.0]
+    ppg_band: [0.5, 8.0]
+    flat_std: 1.0e-6
+    max_clip_ratio: 0.05
+  baseline:
+    calibration_sec: 30.0      # 시연 직전 시연자별 비주행 측정
+    min_ibi_count: 20
+    max_hr_ppg_diff: 10.0
+    min_windows_for_sigma_s: 3
+    train_invalid_rate: 0.2    # 학습 시 기준 무효 처리 비율 (미등록 사용자 대비)
   label:
     n_classes: 4
     names: ["매우 양호", "양호", "피로", "상태 이상"]   # 임시 명칭

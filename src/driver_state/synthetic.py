@@ -51,31 +51,48 @@ def _ppg(beats: np.ndarray, n: int, fs: float, rng) -> np.ndarray:
     return 500 + 200 * x + 5 * rng.standard_normal(n)   # ADC 단위처럼 오프셋·스케일을 다르게
 
 
-def make_subject(subject_id: str, seconds_per_class: float = 180.0, fs_ecg: float = 250.0,
-                 fs_ppg: float = 50.0, fs_can: float = 20.0, n_classes: int = 4,
-                 seed: int = 0) -> Recording:
-    rng = np.random.default_rng(seed)
-    base_hr = rng.uniform(60, 80)
-    base_hrv = rng.uniform(0.8, 1.2)
-    order = rng.permutation(n_classes)
-    ecg, ppg, can, labels = [], [], {k: [] for k in ("speed", "steering_angle", "accel_pedal", "brake")}, []
-    for k in order:
-        dhr, hrv, irr, steer = _CLASS_EFFECT[int(k)]
-        beats = _beat_times(seconds_per_class, base_hr + dhr, base_hrv * hrv, irr, rng)
-        ecg.append(_ecg(beats, int(seconds_per_class * fs_ecg), fs_ecg, rng))
-        ppg.append(_ppg(beats, int(seconds_per_class * fs_ppg), fs_ppg, rng))
-        nc = int(seconds_per_class * fs_can)
+_REST_EFFECT = (0.0, 1.2, 0.0, 1.0)   # 기준(휴식) 구간: 평소 상태
+
+
+def make_recording(subject_id: str | None, segments: list[tuple[int | None, float]],
+                   base_hr: float, base_hrv: float, rng, session_id: str = "s1",
+                   fs_ecg: float = 250.0, fs_ppg: float = 50.0, fs_can: float = 20.0,
+                   mains_noise: float = 0.05) -> Recording:
+    """segments = [(클래스 또는 None(휴식·미라벨), 길이 초), ...] 순서대로 이어 붙인 녹화."""
+    ecg, ppg, labels = [], [], []
+    can = {k: [] for k in ("speed", "steering_angle", "accel_pedal", "brake")}
+    for k, sec in segments:
+        dhr, hrv, irr, steer = _REST_EFFECT if k is None else _CLASS_EFFECT[int(k)]
+        beats = _beat_times(sec, base_hr + dhr, base_hrv * hrv, irr, rng)
+        n_e = int(sec * fs_ecg)
+        e = _ecg(beats, n_e, fs_ecg, rng)
+        e += mains_noise * np.sin(2 * np.pi * 60.0 * np.arange(n_e) / fs_ecg)   # 전원 잡음 60 Hz
+        ecg.append(e)
+        ppg.append(_ppg(beats, int(sec * fs_ppg), fs_ppg, rng))
+        nc = int(sec * fs_can)
         tc = np.arange(nc) / fs_can
         can["speed"].append(60 + 10 * np.sin(2 * np.pi * tc / 60) + rng.standard_normal(nc))
         can["steering_angle"].append(steer * (3 * np.sin(2 * np.pi * 0.1 * tc) + rng.standard_normal(nc)))
         can["accel_pedal"].append(np.clip(20 + 5 * rng.standard_normal(nc), 0, 100))
         can["brake"].append((rng.random(nc) < 0.05).astype(float))
-        labels.append(np.full(int(seconds_per_class * fs_can), int(k)))
+        labels.append(np.full(nc, -1 if k is None else int(k)))
     signals = {"ecg": np.concatenate(ecg), "ppg": np.concatenate(ppg)}
     signals.update({k: np.concatenate(v) for k, v in can.items()})
     fs = {"ecg": fs_ecg, "ppg": fs_ppg, **{k: fs_can for k in can}}
-    return Recording(subject_id, "s1", signals, fs, np.concatenate(labels), fs_can)
+    return Recording(subject_id, session_id, signals, fs, np.concatenate(labels), fs_can)
 
 
-def make_dataset(n_subjects: int = 6, seconds_per_class: float = 180.0, seed: int = 0) -> list[Recording]:
-    return [make_subject(f"S{i:02d}", seconds_per_class, seed=seed + i) for i in range(n_subjects)]
+def make_subject(subject_id: str | None, seconds_per_class: float = 180.0, rest_sec: float = 30.0,
+                 n_classes: int = 4, seed: int = 0) -> Recording:
+    """참가자 1명: 앞 rest_sec 휴식(미라벨) + 클래스 n개를 무작위 순서로 seconds_per_class 씩."""
+    rng = np.random.default_rng(seed)
+    base_hr = rng.uniform(60, 80)       # 사람마다 다른 평소 심박수 → 개인화가 필요한 이유
+    base_hrv = rng.uniform(0.8, 1.2)
+    segs = ([(None, rest_sec)] if rest_sec > 0 else []) + \
+        [(int(k), seconds_per_class) for k in rng.permutation(n_classes)]
+    return make_recording(subject_id, segs, base_hr, base_hrv, rng)
+
+
+def make_dataset(n_subjects: int = 6, seconds_per_class: float = 180.0, rest_sec: float = 30.0,
+                 seed: int = 0) -> list[Recording]:
+    return [make_subject(f"S{i:02d}", seconds_per_class, rest_sec, seed=seed + i) for i in range(n_subjects)]

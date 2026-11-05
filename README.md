@@ -4,7 +4,7 @@
 
 ECG·PPG 생체신호를 중심으로 차량 CAN 데이터를 보조 정보로 활용하여, 운전 중 운전자의 특이사항과 상태 변화를 Raspberry Pi 내부에서 판단하는 캡스톤디자인 프로젝트입니다. 카메라 없이 생체센서 기반으로 개발합니다.
 
-> 현재 단계: 공개 데이터 기반 모델 골조와 센서 수집 환경 준비. 후보 모델 5종(MLP, CNN+BiLSTM, Random Forest, XGBoost, LightGBM)과 공통 입력 규약 초안을 구현했으며, 현재는 합성 데이터로만 동작을 확인한 상태입니다. 공개 데이터셋 로더와 라벨 정의는 아직 없습니다.
+> 현재 단계: 공개 데이터 기반 모델 골조와 센서 수집 환경 준비. 후보 모델 5종(MLP, CNN+BiLSTM, Random Forest, XGBoost, LightGBM)과 공통 입력 규약(개인 Baseline 포함)을 구현했으며, 현재는 합성 데이터로만 동작을 확인한 상태입니다. 시연 모델은 생체 단독(CAN 후순위)입니다. 공개 데이터셋 로더와 라벨 정의는 아직 없습니다.
 
 ## 프로젝트 개요
 
@@ -140,14 +140,18 @@ ECG / PPG + 차량 CAN (실시간 또는 파일 Replay)
 ├── requirements.txt
 ├── configs/default.yaml          # 입력 규약 기본값 + 모델 하이퍼파라미터
 ├── src/driver_state/
-│   ├── spec.py                   # 채널·윈도우·특징·라벨 규약
-│   ├── data.py                   # Recording → 리샘플 → 윈도우
-│   ├── features.py               # HRV·PPG(·CAN) 특징 추출
+│   ├── spec.py                   # 채널·전처리·윈도우·특징·Baseline·라벨 규약
+│   ├── preprocessing.py          # 노치·anti-aliasing·리샘플·대역통과·품질 검사
+│   ├── data.py                   # Recording → 전처리 → 윈도우
+│   ├── features.py               # HRV·PPG 특징 추출
+│   ├── baseline.py               # 개인 Baseline 프로필·개인화 특징
 │   ├── normalization.py          # 정규화 파이프라인 (JSON 저장)
+│   ├── inference.py              # 시연 추론 (프로필 + Replay)
 │   ├── evaluate.py               # LOSO 비교 평가
 │   ├── synthetic.py              # 동작 확인용 합성 데이터
 │   └── models/                   # 후보 모델 5종
-├── scripts/run_benchmark.py
+├── scripts/run_benchmark.py      # LOSO 비교 (--compare-personal)
+├── scripts/demo_pipeline.py      # 시연 흐름 리허설
 ├── tests/
 └── docs/
     ├── project-plan.md
@@ -170,7 +174,8 @@ Python 3.10 이상에서 모델 코드를 실행할 수 있습니다.
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python -m pytest -q tests                       # 입력 규약·모델 인터페이스 테스트
-python scripts/run_benchmark.py --synthetic     # 합성 데이터로 5개 모델 LOSO 비교
+python scripts/run_benchmark.py --synthetic --compare-personal   # 5개 모델 LOSO, 개인화 전/후
+python scripts/demo_pipeline.py                 # 30초 calibration → 프로필 → Replay 추론
 ```
 
 결과는 `outputs/benchmark/`(Git 제외)에 저장됩니다. 입력 형식은 [공통 입력 규약](docs/input-spec.md), 모델 설명은 [후보 모델](docs/models.md)을 참고하세요. 보드 런타임과 설치 방법은 보드가 정해지면 추가합니다. 협업 방법은 [협업 가이드](CONTRIBUTING.md)를 참고하세요.

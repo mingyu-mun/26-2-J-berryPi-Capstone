@@ -3,7 +3,8 @@
 모든 후보 모델은 아래 메서드를 같은 의미로 제공한다. 평가 스크립트와 보드 추론 코드는
 모델 종류를 몰라도 이 인터페이스만으로 동작한다.
 
-- input_kind: "sequence" (N,C,T) 또는 "features" (N,F). InputPipeline.transform() 결과의 key.
+- input_kind: InputPipeline.transform() 결과의 key. "features" (N,F+P) 또는
+  "sequence+personal" ((N,C,T), (N,P)) 튜플. model_input() 으로 꺼낸다.
 - fit(X, y, X_val, y_val): 학습. 검증셋이 있으면 early stopping 에 사용.
 - predict_proba(X) -> (N, n_classes) float, 각 행의 합 = 1.
 - predict(X) -> (N,) int
@@ -15,6 +16,17 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 import numpy as np
+
+
+def model_input(inp: dict, kind: str):
+    """InputPipeline.transform() 결과에서 모델 종류에 맞는 입력을 꺼낸다."""
+    if kind == "sequence+personal":
+        return (inp["sequence"], inp["personal"])
+    return inp[kind]
+
+
+def n_samples(X) -> int:
+    return len(X[0]) if isinstance(X, (tuple, list)) else len(X)
 
 
 class CandidateModel(ABC):

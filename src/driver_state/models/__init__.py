@@ -1,4 +1,4 @@
-from .base import CandidateModel
+from .base import CandidateModel, model_input, n_samples
 from .neural import CNNBiLSTMModel, MLPModel
 from .trees import LightGBMModel, RandomForestModel, XGBoostModel
 
@@ -13,5 +13,5 @@ def build_model(name: str, n_classes: int, seed: int = 0, **params) -> Candidate
     return REGISTRY[name](n_classes, seed, **params)
 
 
-__all__ = ["CandidateModel", "REGISTRY", "build_model", "MLPModel", "CNNBiLSTMModel",
+__all__ = ["CandidateModel", "model_input", "n_samples", "REGISTRY", "build_model", "MLPModel", "CNNBiLSTMModel",
            "RandomForestModel", "XGBoostModel", "LightGBMModel"]
