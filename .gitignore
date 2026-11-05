@@ -41,3 +41,6 @@ dist/
 coverage/
 .coverage
 htmlcov/
+
+# 실험 결과·모델 산출물 (로컬 생성물)
+outputs/
