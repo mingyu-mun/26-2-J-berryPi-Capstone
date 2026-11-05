@@ -13,7 +13,8 @@ from driver_state.inference import StatePredictor, save_bundle  # noqa: E402
 from driver_state.models import REGISTRY, build_model, model_input  # noqa: E402
 from driver_state.normalization import InputPipeline  # noqa: E402
 from driver_state.preprocessing import prepare_channel  # noqa: E402
-from driver_state.spec import PERSONAL_FEATURES, InputSpec  # noqa: E402
+from driver_state.spec import PERSONAL_FEATURES, InputSpec, StateMachineSpec  # noqa: E402
+from driver_state.state_machine import DrowsinessStateMachine, judge_windows, timeline_metrics  # noqa: E402
 from driver_state.synthetic import make_dataset, make_recording, make_subject  # noqa: E402
 
 FAST = {"mlp": dict(epochs=3), "cnn_bilstm": dict(epochs=2), "random_forest": dict(n_estimators=10),
@@ -139,7 +140,7 @@ def test_no_personal_mode(data):
     spec2 = InputSpec(use_personal=False)
     out = InputPipeline(spec2).fit(ws, None, profiles).transform(ws, None, profiles)
     assert out["features"].shape[1] == 8 and out["personal"].shape[1] == 0
-    m = build_model("cnn_bilstm", 4, epochs=1).fit(model_input(out, "sequence+personal"), ws.y)
+    m = build_model("cnn_bilstm", 2, epochs=1).fit(model_input(out, "sequence+personal"), ws.y)
     assert m.net.personal_dim == 0
 
 
@@ -166,11 +167,11 @@ def test_model_contract(name, data, tmp_path):
 def test_missing_class_in_train(data):
     spec, ws, profiles = data
     out = InputPipeline(spec).fit(ws, None, profiles).transform(ws, None, profiles)["features"]
-    keep = ws.y != 3
+    keep = ws.y != 1
     for name in ("random_forest", "xgboost", "lightgbm"):
-        m = build_model(name, 4, **FAST[name]).fit(out[keep], ws.y[keep])
+        m = build_model(name, 2, **FAST[name]).fit(out[keep], ws.y[keep])
         p = m.predict_proba(out)
-        assert p.shape == (len(out), 4) and np.allclose(p[:, 3], 0)
+        assert p.shape == (len(out), 2) and np.allclose(p[:, 1], 0)
 
 
 @pytest.mark.parametrize("name,shapes", [("mlp", [(15,)]), ("cnn_bilstm", [(2, 3000), (7,)])])
@@ -181,7 +182,7 @@ def test_onnx_export(name, shapes, tmp_path):
     rng = np.random.default_rng(0)
     X = tuple(rng.standard_normal((16, *s)).astype(np.float32) for s in shapes)
     X = X if len(X) > 1 else X[0]
-    m = build_model(name, 4, epochs=1).fit(X, np.arange(16) % 4)
+    m = build_model(name, 2, epochs=1).fit(X, np.arange(16) % 2)
     m.export_onnx(tmp_path / "m.onnx")
     sess = ort.InferenceSession(str(tmp_path / "m.onnx"))
     names = [i.name for i in sess.get_inputs()]
@@ -199,7 +200,7 @@ def test_demo_inference_flow(data, tmp_path):
     spec, ws, profiles = data
     pipe = InputPipeline(spec).fit(ws, None, profiles)
     out = pipe.transform(ws, None, profiles, invalid_rate=0.2)
-    m = build_model("lightgbm", 4, n_estimators=10).fit(out["features"], ws.y)
+    m = build_model("lightgbm", 2, n_estimators=10).fit(out["features"], ws.y)
     save_bundle(tmp_path / "b", pipe, m)
     pred = StatePredictor(tmp_path / "b")
     rng = np.random.default_rng(5)
@@ -209,6 +210,7 @@ def test_demo_inference_flow(data, tmp_path):
     pred.set_profile(prof)
     res = pred.predict_recording(replay)
     assert len(res) == 4 and all(r.baseline_valid for r in res)
+    assert all(r.valid and r.level in (0, 1, 2) and len(r.proba) == 2 for r in res)
     pred.set_profile(None)   # 미등록 사용자
     assert not any(r.baseline_valid for r in pred.predict_recording(replay))
 
@@ -231,3 +233,70 @@ def test_handoff_folder_loader(tmp_path):
     assert loaded.subject_id == "User1" and loaded.fs["ecg"] == 250
     ws, profiles = build_dataset([loaded], InputSpec())
     assert profiles["User1"].valid and len(ws) > 0
+
+
+# ---------- 윈도우 판정 · 상태 머신 ----------
+
+def test_window_gate_marks_bad_windows(data):
+    spec, ws, profiles = data
+    base = extract_features(ws, spec)
+    ok = judge_windows(ws.x_seq, base, ws.quality, ws.channels, spec)
+    assert sum(r == "" for r in ok) >= 0.9 * len(ws)          # 합성 정상 신호는 대부분 통과
+    q = ws.quality.copy(); q[0] = False
+    b = base.copy(); b[1, 5] = np.nan; b[2, 5] = b[2, 0] + 30   # NaN, |HR-PR| 30 bpm
+    flat = ws.x_seq.copy(); flat[3, 0] = 0.0                      # ECG 박동 없음
+    r = judge_windows(flat, b, q, ws.channels, spec)
+    assert "품질" in r[0] and "특징" in r[1] and "HR-PR" in r[2] and "유효 RR" in r[3]
+
+
+def test_state_machine_escalates_and_recovers():
+    sm = DrowsinessStateMachine(StateMachineSpec(), stride_sec=10.0)
+    levels = [sm.step(10.0 * (i + 1), p).level for i, p in enumerate([0.1, 0.9, 0.9, 0.9, 0.5, 0.1, 0.1, 0.1])]
+    # s: .1 .5 .7 .8 .65 .375 .24 .17 → 정상, 정상(히스테리시스), 주의, 졸음, 졸음(유지), 주의, 정상, 정상
+    assert levels == [0, 0, 1, 2, 2, 1, 0, 0]
+
+
+def test_state_machine_skips_short_invalid_and_resets_long():
+    sm = DrowsinessStateMachine(StateMachineSpec(invalid_hold_sec=30.0), stride_sec=10.0)
+    for i, p in enumerate([0.9, 0.9, 0.9]):
+        sm.step(10.0 * (i + 1), p)
+    assert sm.level == 2
+    s1 = sm.step(40.0, None); s2 = sm.step(50.0, None)        # -1 20초: 직전 단계 유지
+    assert s1.skipped and s1.level == 2 and s2.level == 2
+    s3 = sm.step(60.0, None)                                    # 30초 연속 → 측정 불가 + 초기화
+    assert s3.level == -1 and s3.level_name == "측정 불가"
+    s4 = sm.step(70.0, 0.1)
+    assert s4.level == 0 and s4.score == pytest.approx(0.1)
+
+
+def test_timeline_metrics():
+    t = np.arange(1, 9) * 10.0
+    truth = np.array([0, 0, 1, 1, 1, 0, 0, 0])
+    lv = np.array([0, 1, 1, 2, 2, 1, 0, -1])
+    m = timeline_metrics(t, lv, truth)
+    assert m["detection_delay_sec"] == [10.0] and m["missed"] == 0
+    assert m["false_alarms"] == 1 and m["unavailable_ratio"] == pytest.approx(1 / 8)
+
+
+def test_predictor_marks_contact_loss(data, tmp_path):
+    spec, ws, profiles = data
+    pipe = InputPipeline(spec).fit(ws, None, profiles)
+    m = build_model("lightgbm", 2, n_estimators=10).fit(pipe.transform(ws, None, profiles)["features"], ws.y)
+    save_bundle(tmp_path / "b", pipe, m)
+    pred = StatePredictor(tmp_path / "b")
+    rng = np.random.default_rng(7)
+    rec = make_recording("p", [(0, 120.0)], 75, 1.0, rng)
+    rec.signals["ppg"][: int(50 * 50)] = 512.0                  # 앞 50초 PPG 접촉 불량
+    res = pred.predict_recording(rec)
+    assert not res[0].valid and res[0].state == -1 and res[0].proba == []
+    assert res[-1].valid
+
+
+def test_quality_flags_partial_dropout():
+    """윈도우 일부(8초)만 값이 멈춰도 품질 불량. 업샘플 overshoot 때문에 포화 검사로는 못 잡는 경우."""
+    spec = InputSpec()
+    rec = make_subject("Q", 60.0, rest_sec=0, seed=3)
+    fs = rec.fs["ppg"]
+    rec.signals["ppg"][int(5 * fs):int(13 * fs)] = 0.0
+    ws = build_windows([rec], spec)
+    assert not ws.quality[ws.t_start < 13].any() and ws.quality[ws.t_start >= 13].all()

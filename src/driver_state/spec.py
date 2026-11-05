@@ -1,4 +1,4 @@
-"""공통 입력 규약 (Input Spec) v0.2 — 개인 Baseline 반영.
+"""공통 입력 규약 (Input Spec) v0.3 — 개인 Baseline + 2클래스 분류기 + 상태 머신.
 
 5개 후보 모델(MLP, CNN+BiLSTM, Random Forest, XGBoost, LightGBM)이 모두 같은
 규약으로 데이터를 받도록, 채널 이름·샘플링 주기·전처리·윈도우·특징 순서·개인화·라벨
@@ -60,17 +60,38 @@ CAN_FEATURES: tuple[str, ...] = (
 
 @dataclass
 class LabelSpec:
-    """라벨 규약. 4단계 정의가 미확정이라 이름은 임시값이고 정수 id 만 계약으로 쓴다.
+    """라벨 규약 (11/5 확정): 분류기는 2클래스 0 = 정상, 1 = 졸음. 미라벨은 -1.
 
-    - 모델 출력은 항상 0..n_classes-1 의 정수 id 와 (N, n_classes) 확률.
-    - ``binary_map`` 은 다단계 분류가 어려울 때를 대비한 이진 백업 매핑.
+    - 모델 출력은 0..n_classes-1 의 정수 id 와 (N, n_classes) 확률. P(졸음) = proba[:, 1].
+    - 최종 표시 상태(정상/주의/졸음 3단계)는 모델이 아니라 상태 머신이 정한다 (StateMachineSpec).
     """
 
-    n_classes: int = 4
-    names: list[str] = field(default_factory=lambda: ["매우 양호", "양호", "피로", "상태 이상"])
+    n_classes: int = 2
+    names: list[str] = field(default_factory=lambda: ["정상", "졸음"])
     # 윈도우 라벨 = 윈도우 안 샘플 라벨의 최빈값. 최빈값 비율이 이 값보다 낮으면 버린다.
     min_label_purity: float = 0.8
-    binary_map: dict[int, int] = field(default_factory=lambda: {0: 0, 1: 0, 2: 1, 3: 1})
+
+
+@dataclass
+class StateMachineSpec:
+    """추론 후단: 윈도우 판정(-1) + 졸음 누적 상태 머신 (docs/state-machine.md).
+
+    시간 기준은 시연에서 상태 변화를 바로 보여주도록 10초(= 윈도우 1개 갱신)로 짧게 둔다.
+    """
+
+    # 윈도우 판정: 하나라도 걸리면 그 윈도우는 -1 (판정 불가) → 상태 전이 계산에서 제외
+    gate_min_ibi: int = 20               # 윈도우 안 유효 RR 간격 최소 개수 (30초 기준)
+    gate_max_hr_ppg_diff: float = 10.0   # |ECG HR - PPG 맥박수| 상한 [bpm]
+    # 누적 점수 s_t = alpha * p_t + (1 - alpha) * s_{t-1}  (p_t = P(졸음))
+    alpha: float = 0.5
+    on_threshold: float = 0.6            # s > on  → 졸음 쪽 누적
+    off_threshold: float = 0.4           # s < off → 회복 쪽 누적 (사이 구간은 유지)
+    escalate_sec: float = 10.0           # 졸음 쪽 누적이 이만큼이면 한 단계 위로 (정상→주의→졸음)
+    recover_sec: float = 10.0            # 회복 쪽 누적이 이만큼이면 한 단계 아래로
+    # -1 이 이만큼 연속되면 '측정 불가' 표시 후 누적 초기화. 윈도우 30초 / 이동 10초라 1초짜리 접촉 불량도
+    # 윈도우 3~4개(판정 30~40초)를 -1 로 만든다. 짧은 끊김은 건너뛰도록 60초(실제 끊김 약 30초)로 둔다.
+    invalid_hold_sec: float = 60.0
+    level_names: list[str] = field(default_factory=lambda: ["정상", "주의", "졸음"])
 
 
 @dataclass
@@ -84,6 +105,7 @@ class PreprocessSpec:
     # 품질 검사 (윈도우 단위, 필터 전 리샘플 신호 기준)
     flat_std: float = 1e-6               # 표준편차가 이 값 미만이면 평탄(접촉 불량)
     max_clip_ratio: float = 0.05         # 윈도우 최솟값/최댓값에 붙은 샘플 비율 상한 (포화)
+    max_flat_run_sec: float = 1.0        # 값이 그대로 멈춘 구간의 최대 길이 [s] (윈도우 일부 접촉 불량·전송 끊김)
 
 
 @dataclass
@@ -111,6 +133,7 @@ class InputSpec:
     label: LabelSpec = field(default_factory=LabelSpec)
     preprocess: PreprocessSpec = field(default_factory=PreprocessSpec)
     baseline: BaselineSpec = field(default_factory=BaselineSpec)
+    state_machine: StateMachineSpec = field(default_factory=StateMachineSpec)
 
     # --- 파생 값 ---
     @property
@@ -151,15 +174,15 @@ class InputSpec:
         d.pop("channels", None)
         d.pop("feature_names", None)
         label = dict(d.pop("label", None) or {})
-        if "binary_map" in label:
-            label["binary_map"] = {int(k): int(v) for k, v in label["binary_map"].items()}
+        label.pop("binary_map", None)   # v0.2 의 이진 백업 매핑 (2클래스 확정으로 삭제)
         pre = dict(d.pop("preprocess", None) or {})
         for k in ("ecg_band", "ppg_band"):
             if k in pre:
                 pre[k] = tuple(pre[k])
         base = dict(d.pop("baseline", None) or {})
+        sm = dict(d.pop("state_machine", None) or {})
         return cls(label=LabelSpec(**label), preprocess=PreprocessSpec(**pre),
-                   baseline=BaselineSpec(**base), **d)
+                   baseline=BaselineSpec(**base), state_machine=StateMachineSpec(**sm), **d)
 
 
 def load_config(path: str | Path) -> dict[str, Any]:

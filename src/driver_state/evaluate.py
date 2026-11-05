@@ -48,7 +48,7 @@ def latency_ms(model, X: np.ndarray, repeats: int = 50) -> float:
 
 def run_benchmark(ws: WindowSet, spec: InputSpec, model_cfgs: dict[str, dict],
                   profiles: dict[str, Profile] | None = None, n_folds: int | None = None, seed: int = 0,
-                  label_mode: str = "multi", log=print) -> dict:
+                  log=print) -> dict:
     keep = ws.y >= 0
     if spec.drop_bad_quality:
         keep &= ws.quality
@@ -56,9 +56,6 @@ def run_benchmark(ws: WindowSet, spec: InputSpec, model_cfgs: dict[str, dict],
     ws = ws.subset(np.where(keep)[0])
     y_all = ws.y.copy()
     n_classes = spec.label.n_classes
-    if label_mode == "binary":
-        y_all = np.vectorize(spec.label.binary_map.get)(y_all)
-        n_classes = 2
     feats_all = extract_features(ws, spec)
     labels = list(range(n_classes))
 
@@ -111,7 +108,7 @@ def run_benchmark(ws: WindowSet, spec: InputSpec, model_cfgs: dict[str, dict],
     return {"n_windows": int(len(ws)), "n_bad_quality_dropped": n_bad,
             "n_subjects": int(len(np.unique(ws.groups))), "n_valid_profiles": n_valid,
             "use_personal": spec.use_personal, "n_features": len(spec.feature_names),
-            "n_classes": n_classes, "label_mode": label_mode, "models": summary}
+            "n_classes": n_classes, "models": summary}
 
 
 def summary_markdown(res: dict) -> str:

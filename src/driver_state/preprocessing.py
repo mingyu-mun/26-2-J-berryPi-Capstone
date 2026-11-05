@@ -70,4 +70,15 @@ def window_quality(raw_win: np.ndarray, spec: InputSpec, channels: tuple[str, ..
         clip = np.mean((x <= lo + 1e-9 * abs(lo)) | (x >= hi - 1e-9 * abs(hi)))
         if clip > p.max_clip_ratio:
             return False
+        if _longest_flat_run(x, 1e-6 * max(hi - lo, 1e-12)) > p.max_flat_run_sec * spec.fs:
+            return False
     return True
+
+
+def _longest_flat_run(x: np.ndarray, tol: float) -> int:
+    """연속 샘플 차이가 tol 이하로 이어진 가장 긴 구간의 샘플 수."""
+    still = np.abs(np.diff(x)) <= tol
+    if not still.any():
+        return 0
+    d = np.diff(np.concatenate([[0], still.astype(np.int8), [0]]))
+    return int((np.where(d == -1)[0] - np.where(d == 1)[0]).max()) + 1
