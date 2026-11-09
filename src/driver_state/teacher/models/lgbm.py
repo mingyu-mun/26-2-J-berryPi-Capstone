@@ -20,20 +20,26 @@ DEFAULTS = dict(num_leaves=15, max_depth=4, min_child_samples=200, feature_fract
 class LGBMTeacher(TeacherModel):
     name = "lgbm"
 
-    def __init__(self, seed: int = 0, use_personal: bool = True, **params):
-        super().__init__(seed, use_personal=use_personal, **{**DEFAULTS, **params})
+    def __init__(self, seed: int = 0, use_personal: bool = True, pers_cols: str = "signed", **params):
+        super().__init__(seed, use_personal=use_personal, pers_cols=pers_cols, **{**DEFAULTS, **params})
         self.use_personal = use_personal
+        self.pers_cols = pers_cols
         self.booster = None
         self.columns: list[str] = []
 
     def _matrix(self, X: TeacherInput) -> pd.DataFrame:
-        df = pd.concat([X.raw, X.pers], axis=1) if self.use_personal else X.raw
+        if self.use_personal:
+            from ..personal import pers_columns
+            df = pd.concat([X.raw, X.pers[pers_columns(X.pers.columns, self.pers_cols)]], axis=1)
+        else:
+            df = X.raw
         return df[self.columns] if self.columns else df
 
     def fit(self, X, y, w=None, X_val=None, y_val=None, w_val=None):
         import lightgbm as lgb
         p = dict(self.params)
         p.pop("use_personal", None)
+        p.pop("pers_cols", None)
         rounds = int(p.pop("num_boost_round"))
         es = int(p.pop("early_stopping"))
         M = self._matrix(X)

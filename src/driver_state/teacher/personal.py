@@ -9,10 +9,25 @@ fold 마다 학습 참가자로만 fit 한다 (baseline.fit_sigma_pop 과 같은
 """
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 
 from .spec import TeacherSpec
+
+CORE = ("hr", "rmssd", "sdnn")      # dev_core: 2분·5분 스케일의 심박·HRV 핵심 특징
+
+# 열 묶음 (LightGBM 의 pers_cols 로 고름)
+SIGNED_PREFIX = ("z_", "r_")
+UNSIGNED_PREFIX = ("az_", "ar_", "dev_")
+
+
+def pers_columns(cols, mode: str) -> list[str]:
+    """mode: signed (기존) | signed_abs (부호 있는 + 없는) | abs (|z|·|r|·dev) | dev (스케일별 거리만)."""
+    keep = {"signed": SIGNED_PREFIX, "signed_abs": SIGNED_PREFIX + UNSIGNED_PREFIX,
+            "abs": UNSIGNED_PREFIX, "dev": ("dev_",)}[mode]
+    return [c for c in cols if c.startswith(keep) or c == "baseline_valid"]
 
 
 class PersonalNormalizer:
@@ -52,6 +67,18 @@ class PersonalNormalizer:
                 r = np.where((x > 0) & (m > 0), np.log(x / m), np.nan)
             r[~valid] = np.nan
             out[f"r_{n}"] = r
+        # 부호 없는 특징: 기준에서 "얼마나 벗어났나"만 본다. 데이터셋마다 졸음 방향이 반대인 문제
+        # (MPD-DF 심박↓, DROZY·AdVitam 심박↑) 를 다루기 위한 것 (2026-11-09).
+        for k in list(out):
+            out[f"a{k}"] = np.abs(out[k])                     # az_*, ar_*
+        groups = {f"dev_{tag}": [f"z_{n}" for n in names if n.rsplit("_", 1)[1] == tag]
+                  for tag in sorted({n.rsplit("_", 1)[1] for n in names}, key=int)}
+        groups["dev_core"] = [f"z_{n}" for n in names if n.rsplit("_", 1)[0] in CORE and n.rsplit("_", 1)[1] != "30"]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            for g, cols in groups.items():          # sqrt(Σz²/k): 대각 마할라노비스 거리
+                if cols:
+                    out[g] = np.sqrt(np.nanmean(np.column_stack([out[c] for c in cols]) ** 2, axis=1))
         out["baseline_valid"] = valid.astype(np.float64)
         return pd.DataFrame(out, index=win.index)
 

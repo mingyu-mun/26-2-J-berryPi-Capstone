@@ -27,10 +27,13 @@ CANDIDATES = {
     "rule": ("rule", {}),
     "lgbm": ("lgbm", {"use_personal": True}),
     "lgbm_nopers": ("lgbm", {"use_personal": False}),
+    "lgbm_signabs": ("lgbm", {"use_personal": True, "pers_cols": "signed_abs"}),   # 부호 있는 z + |z|, Σz²
+    "lgbm_abs": ("lgbm", {"use_personal": True, "pers_cols": "abs"}),              # |z|, |r|, dev 만 (부호 없음)
+    "lgbm_dev": ("lgbm", {"use_personal": True, "pers_cols": "dev"}),              # 스케일별 거리 sqrt(mean z²) 만
     "rrnet": ("rrnet", {}),
     "ensemble": ("ensemble", {}),
 }
-SIMPLICITY = ["lgbm", "lgbm_nopers", "rrnet", "ensemble"]   # 동점일 때 앞쪽을 고른다
+SIMPLICITY = ["lgbm", "lgbm_nopers", "lgbm_dev", "lgbm_abs", "lgbm_signabs", "rrnet", "ensemble"]   # 동점일 때 앞쪽을 고른다
 ENSEMBLE_MEMBERS = ("lgbm", "rrnet")
 
 
