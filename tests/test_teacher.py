@@ -142,7 +142,7 @@ def test_tau_choice_and_apply():
 def test_label_rule():
     r = LabelRule()
     assert [r.kss(v) for v in (3, 5, 6, 7, 9)] == [0, 0, -1, 1, 1]
-    assert [r.fatigue(v) for v in range(5)] == [0, -1, -1, 1, 1]
+    assert [r.fatigue(v) for v in range(5)] == [0, -1, 1, 1, 1]
 
 
 # ---------------- end-to-end

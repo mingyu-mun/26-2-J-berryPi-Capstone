@@ -14,7 +14,7 @@ labels:                     # 어댑터의 원 라벨 → 이진 변환
   kss_drowsy_min: 7
   kss_alert_max: 5
   fatigue_alert: [0]
-  fatigue_drowsy: [3, 4]
+  fatigue_drowsy: [2, 3, 4] # MPD-DF: 2 = 논문의 drowsy(뚜렷한 α + 느린 파), 3·4 = N1·N2 수면. 1(피로 시작)은 제외
   event_drowsy_sec: 60
   event_alert_gap_sec: 600
 
