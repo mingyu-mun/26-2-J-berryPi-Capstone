@@ -10,7 +10,9 @@
 
 변환:
 - 참가자 = code, 세션 baseline (is_rest, 자율주행 관찰 5 분) · block1 · block2. Training(수동 주행)은 뺌
-- 라벨: block k 의 마지막 kss_label_sec(기본 5 분)에 KSS_B_k 를 LabelRule.kss 로 (≥7 졸음, ≤5 정상), 나머지 -1
+- 라벨: block k 의 마지막 kss_label_sec(기본 5 분)에 KSS_B_k, 처음 kss_label_sec 에 주행 직전 KSS_{k-1}
+  (KSS_0 = 실험 전, KSS_1 = 주행 1 뒤). LabelRule.kss 로 (≥7 졸음, ≤5 정상), 나머지 -1.
+  시작 라벨로 같은 사람의 "정상 → 졸음" 변화가 생긴다 (둘 다 있는 사람 6 → 15명). start_kss=False 면 끝 라벨만
 - t0 는 같은 녹화 안의 구간 시작 [s] (순서만 의미). 전원 50 Hz (스위스)
 - 수면 박탈 여부는 drowsiness_inducer (D → sleep_deprivation, A → none) 와 meta.label_sleep 에 둔다
 """
@@ -61,7 +63,7 @@ def read_physio(path: Path) -> tuple[np.ndarray, float]:
 
 
 def convert(src: str | Path, out: str | Path, rule: LabelRule | None = None,
-            kss_label_sec: float = 300.0, log=print) -> dict:
+            kss_label_sec: float = 300.0, start_kss: bool = True, log=print) -> dict:
     src, out = Path(src), Path(out)
     rule = rule or LabelRule()
     db = pd.read_csv(src / "Preprocessed" / "Questionnaire" / "Exp4_Database.csv", sep=None, engine="python")
@@ -83,15 +85,19 @@ def convert(src: str | Path, out: str | Path, rule: LabelRule | None = None,
             continue
         row = db.loc[code] if code in db.index else None
         sd = code.split("_")[1][0] if "_" in code else "?"
-        periods = [("baseline", "Baseline", None)] + [(f"block{k}", f"Block{k}", f"KSS_B_{k}") for k in (1, 2, 3)]
-        for ses, key, kss_col in periods:
+        # (세션, 표시 이름, 끝 KSS, 시작 KSS). 시작 KSS = 그 주행 직전에 잰 "현재 상태"
+        periods = [("baseline", "Baseline", None, None)] + [
+            (f"block{k}", f"Block{k}", f"KSS_B_{k}", f"KSS_{k - 1}" if start_kss else None) for k in (1, 2, 3)]
+        for ses, key, kss_col, start_col in periods:
             a, b = marks.get(f"{key} Start"), marks.get(f"{key} End")
             if a is None or b is None or b <= a:
                 if key != "Block3":
                     skipped.append(f"{code}/{ses}: 구간 표시 없음")
                 continue
             i0, i1 = int(round(a * fs)), min(int(round(b * fs)), len(ecg))
-            kss = float(row[kss_col]) if (row is not None and kss_col and kss_col in row and pd.notna(row[kss_col])) else np.nan
+            def _kss(col):
+                return float(row[col]) if (row is not None and col and col in row and pd.notna(row[col])) else np.nan
+            kss, kss_start = _kss(kss_col), _kss(start_col)
             for j, (o, seg) in enumerate(finite_segments({"ecg": ecg[i0:i1]}, fs)):
                 name = ses if j == 0 else f"{ses}_seg{j + 1}"
                 dur = len(seg["ecg"]) / fs
@@ -102,9 +108,15 @@ def convert(src: str | Path, out: str | Path, rule: LabelRule | None = None,
                     end_rel = (i1 - i0) / fs - o / fs          # 구간 끝 (이 조각 기준 초)
                     lo = max(0, int(np.floor(end_rel - kss_label_sec)))
                     hi = min(len(lab), int(np.ceil(end_rel)))
+                    rows = [{"t": end_rel, "kss": kss, "item": kss_col}]
+                    if start_col:
+                        s_hi = min(len(lab), int(np.ceil(kss_label_sec - o / fs)))   # 구간 시작에서 kss_label_sec
+                        if s_hi > 0 and s_hi <= lo:                                   # 끝 라벨과 겹치지 않을 때만
+                            lab[:s_hi] = rule.kss(kss_start)
+                        rows.insert(0, {"t": -o / fs, "kss": kss_start, "item": start_col})
                     if hi > lo:
                         lab[lo:hi] = rule.kss(kss)
-                    orig = pd.DataFrame([{"t": end_rel, "kss": kss, "item": kss_col}])
+                    orig = pd.DataFrame(rows)
                 meta = {
                     "dataset_id": DATASET_ID, "subject_id": code, "session_id": name,
                     "t0": float(a + o / fs), "fs": {"ecg": fs}, "channels": ["ecg"],
@@ -113,7 +125,8 @@ def convert(src: str | Path, out: str | Path, rule: LabelRule | None = None,
                     "drowsiness_inducer": "sleep_deprivation" if sd == "D" else "none",
                     "label_sleep": 1 if sd == "D" else 0,
                     "sensor": {"ecg": "BioPac MP36 (0.5–35 Hz 장비 필터)"},
-                    "notes": f"AdVitam Exp4 {code} {key}. 라벨은 구간 끝 {kss_label_sec:.0f}s 에 {kss_col}",
+                    "notes": f"AdVitam Exp4 {code} {key}. 라벨: 구간 끝 {kss_label_sec:.0f}s 에 {kss_col}"
+                             + (f", 시작 {kss_label_sec:.0f}s 에 {start_col}" if start_col else ""),
                 }
                 write_session(out / DATASET_ID / code / name, meta, {"ecg": seg["ecg"]}, lab, orig)
                 n_ok += 1

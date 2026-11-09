@@ -140,6 +140,11 @@ def cmd_evaluate(a, cfg):
     ev = cfg.get("evaluation", {})
     models = a.models or ev.get("models")
     win, prof, tacho = _load_cache(a.cache, any(m in ("rrnet", "ensemble") for m in models))
+    if getattr(a, "datasets", None):
+        sel = win["dataset_id"].isin(a.datasets).to_numpy()
+        print(f"데이터셋 {a.datasets} 만 사용: 창 {sel.sum()} / {len(sel)}")
+        win = win[sel].reset_index(drop=True)
+        tacho = np.asarray(tacho[np.flatnonzero(sel)]) if tacho is not None else None
     if tacho is None:
         models = [m for m in models if m not in ("rrnet", "ensemble")]
     out = Path(a.out)
@@ -243,6 +248,7 @@ def main() -> None:
     p.add_argument("--jobs", type=int, default=1); p.add_argument("--no-tacho", action="store_true")
     p = sp.add_parser("evaluate"); p.add_argument("--cache", required=True); p.add_argument("--out", required=True)
     p.add_argument("--models", nargs="*"); p.add_argument("--mode", choices=["lodo", "subject", "both"], default="lodo")
+    p.add_argument("--datasets", nargs="*", help="이 데이터셋만 써서 평가 (예: mpddf advitam)")
     p = sp.add_parser("tau"); p.add_argument("--oof", required=True); p.add_argument("--model")
     p.add_argument("--precision", type=float); p.add_argument("--npv", type=float); p.add_argument("--out")
     p.add_argument("--exclude", nargs="*", help="τ 계산에서 뺄 데이터셋 (라벨이 거친 데이터 등)")
