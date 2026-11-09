@@ -78,17 +78,28 @@
 ## 7. 어댑터 (`src/driver_state/adapters/`, 실행 `scripts/convert.py`)
 
 ```text
-python scripts/convert.py drozy --src <DROZY 폴더> --out <규약 폴더 루트>
-python scripts/convert.py maus  --src <MAUS 폴더>  --out <규약 폴더 루트>
-python scripts/convert.py mand  --src <manD extracted> --out <규약 폴더 루트> [--participants P13 …] [--dehold]
+python scripts/convert.py advitam --src <Exp4 압축 해제 폴더> --out <규약 폴더 루트> [--kss-label-sec 300]
+python scripts/convert.py mpddf   --src <MPD-DF 폴더> --out <규약 폴더 루트>
+python scripts/convert.py dddb    --src <DD-Database 폴더> --out <규약 폴더 루트>
+python scripts/convert.py drozy   --src <DROZY 폴더> --out <규약 폴더 루트>
+python scripts/convert.py maus    --src <MAUS 폴더>  --out <규약 폴더 루트>
+python scripts/convert.py mand    --src <manD extracted> --out <규약 폴더 루트> [--participants P13 …] [--dehold]
 ```
 
-| 데이터 | 용도 | 세션 | 라벨 | 실데이터 확인 (2026-11-09) |
+AdVitam 은 `Exp4.zip` 에서 `Raw/Physio/Txt` 와 `Preprocessed/Questionnaire` 만 풀면 됩니다 (11 GB).
+
+| 데이터 | 용도 | 세션 | 라벨 (창 수: 졸음 / 정상) | 실데이터 확인 (2026-11-09) |
 | --- | --- | --- | --- | --- |
+| AdVitam Exp4 | 교사 학습 | 63명, baseline(is_rest) + block1·2 (189개, ECG 1000 Hz) | 주행 끝 5분에 KSS_B_k (1160 / 1526) | 유효 창 96%. 53_AC16 은 시간 열이 hrs 단위 |
+| MPD-DF | 교사 학습 | 50명, drive (2시간, ECG 1024 Hz) | 피로 단계 변화점을 다음 변화점까지 (137 / 25 905) | 유효 창 94%. **졸음(3–4)이 4명뿐**. 단계 2 까지 졸음으로 보면 23명, 약 4.2시간 |
+| DD-Database | 교사 학습 | 10명 × 2회 (20개, ECG 128 Hz) | 버튼 ±60초 졸음, 10분 이상 떨어지면 정상 (4651 / 3078) | 유효 창 99%. 시작·끝 30초 안의 Event 는 표시로 보고 뺌 |
 | DROZY | 교사 학습 | 14명, test1–3 (36개, 각 10분, ECG 512 Hz) | 테스트별 KSS 1개를 세션 전체에 (≥7 졸음 15세션 분량 870창, ≤5 정상 568창) | 유효 창 70%. D01·D04·D12 는 T파가 커서 R-peak 검출이 흔들림 (유효 0–18%) |
 | MAUS | 라벨링 대상 | 22명, rest(기준) + trial1–6 (153개, ECG·PPG 256 Hz) | 없음 (n-back, NASA-TLX 는 labels_orig) | 유효 창 98%. 003 은 휴식 녹화가 비어 있음 |
 | manD | 라벨링 대상 | 31명, 시나리오 6종 (183개) | 없음 (감정 시나리오는 labels_orig) | **유효 창 0.1%**. 256 Hz 표본 유지 신호로 실효 주기가 ECG 28–41 Hz, BVP 약 6 Hz. `--dehold` 보간 후에도 0.5% |
 
-남은 어댑터: AdVitam Exp4, MPD-DF, DD-Database (`inspect` 결과를 보고 작성).
+교사 4종 합계: 창 71 844개, 유효 68 235개, 라벨 37 951개 (`features` 344초, i5-10400).
+
+## 8. 남은 일
+
 - 실데이터 LODO, τ, 대상 데이터(MAUS 등) 라벨링 — 노트북에서 실행.
 - 학생 로더가 `labels_window.csv` 를 우선 읽도록 한 줄 수정 (학생 쪽 작업).

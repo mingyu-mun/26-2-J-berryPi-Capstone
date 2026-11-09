@@ -5,10 +5,14 @@
 
 | 모듈 | 용도 | 채널 | 라벨 |
 | --- | --- | --- | --- |
+| advitam | 교사 학습 | ecg | 주행 끝 5 분에 KSS_B_k → 이진 (LabelRule.kss) |
+| mpddf | 교사 학습 | ecg | 피로 단계 0–4 변화점 → 이진 (LabelRule.fatigue) |
+| dddb | 교사 학습 | ecg | 졸음 버튼 시각 → 이진 (LabelRule.event_*) |
 | drozy | 교사 학습 | ecg | KSS → 이진 (LabelRule.kss) |
 | mand | 교사 라벨링 대상 (학생) | ecg, ppg | 없음 (감정 시나리오는 labels_orig) |
 | maus | 교사 라벨링 대상 (학생) | ecg, ppg | 없음 (n-back 수준은 labels_orig) |
 """
-from . import drozy, mand, maus  # noqa: F401
+from . import advitam, dddb, drozy, mand, maus, mpddf  # noqa: F401
 
-ADAPTERS = {"drozy": drozy, "mand": mand, "maus": maus}
+ADAPTERS = {"advitam": advitam, "mpddf": mpddf, "dddb": dddb, "drozy": drozy, "mand": mand, "maus": maus}
+TEACHER = ("advitam", "mpddf", "dddb", "drozy")

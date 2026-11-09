@@ -7,7 +7,24 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from driver_state.adapters.common import finite_segments  # noqa: E402
+from driver_state.adapters.dddb import event_labels  # noqa: E402
 from driver_state.adapters.mand import dehold  # noqa: E402
+from driver_state.adapters.mpddf import per_second_labels  # noqa: E402
+from driver_state.teacher.spec import LabelRule  # noqa: E402
+
+
+def test_mpddf_change_points_hold_until_next():
+    import pandas as pd
+    ann = pd.DataFrame({"t": [10.0, 40.0, 70.0, 90.0], "value": ["0", "3", "Severe Artifacts", "1"]})
+    lab = per_second_labels(ann, 100, LabelRule())
+    assert (lab[:10] == -1).all() and (lab[10:40] == 0).all() and (lab[40:70] == 1).all()
+    assert (lab[70:] == -1).all()
+
+
+def test_dddb_event_labels():
+    rule = LabelRule(event_drowsy_sec=60, event_alert_gap_sec=600)
+    lab = event_labels(np.array([1000.0]), 2000, rule)
+    assert lab[1000] == 1 and lab[941] == 1 and lab[900] == -1 and lab[300] == 0 and lab[1700] == 0
 
 
 def test_finite_segments_interpolates_short_and_splits_long():
