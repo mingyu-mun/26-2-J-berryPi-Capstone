@@ -30,10 +30,15 @@ CANDIDATES = {
     "lgbm_signabs": ("lgbm", {"use_personal": True, "pers_cols": "signed_abs"}),   # 부호 있는 z + |z|, Σz²
     "lgbm_abs": ("lgbm", {"use_personal": True, "pers_cols": "abs"}),              # |z|, |r|, dev 만 (부호 없음)
     "lgbm_dev": ("lgbm", {"use_personal": True, "pers_cols": "dev"}),              # 스케일별 거리 sqrt(mean z²) 만
+    "lgbm_mspc": ("lgbm", {"use_personal": True, "pers_cols": "mspc"}),            # MSPC T²·Q 만
+    "lgbm_abs_mspc": ("lgbm", {"use_personal": True, "pers_cols": "abs_mspc"}),    # 부호 없는 특징 + T²·Q
+    "rrnet_mspc": ("rrnet", {"extra_cols": ["mspc_t2", "mspc_q"]}),               # 타코그램 + T²·Q
+    "rrnet_dev": ("rrnet", {"extra_cols": ["mspc_t2", "mspc_q", "dev_120", "dev_300", "dev_core"]}),
     "rrnet": ("rrnet", {}),
     "ensemble": ("ensemble", {}),
 }
-SIMPLICITY = ["lgbm", "lgbm_nopers", "lgbm_dev", "lgbm_abs", "lgbm_signabs", "rrnet", "ensemble"]   # 동점일 때 앞쪽을 고른다
+SIMPLICITY = ["lgbm", "lgbm_nopers", "lgbm_dev", "lgbm_abs", "lgbm_signabs", "lgbm_mspc", "lgbm_abs_mspc",
+              "rrnet", "rrnet_mspc", "rrnet_dev", "ensemble"]   # 동점일 때 앞쪽을 고른다
 ENSEMBLE_MEMBERS = ("lgbm", "rrnet")
 
 
@@ -117,7 +122,7 @@ def run_cv(win: pd.DataFrame, prof: pd.DataFrame, spec: TeacherSpec, models: lis
         if len(np.unique(y_all[tr])) < 2 or len(te) == 0:
             log(f"[{fname}] 학습 라벨이 한 클래스뿐이거나 테스트가 비어 건너뜀")
             continue
-        norm = PersonalNormalizer(spec).fit(W.iloc[tr])
+        norm = PersonalNormalizer(spec).fit(W.iloc[tr], prof)   # MSPC 는 학습 fold 의 정상 창으로만
         force = np.random.default_rng(seed + fi).random(len(tr)) < spec.train_invalid_rate
         sl = (lambda a, i: None if a is None else a[i])
         X = {"tr": make_input(W.iloc[tr], prof, spec, norm, sl(TA, tr), force),

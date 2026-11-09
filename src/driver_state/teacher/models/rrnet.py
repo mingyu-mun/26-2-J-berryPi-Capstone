@@ -20,11 +20,13 @@ from torch import nn
 from .base import TeacherInput, TeacherModel
 
 DEFAULTS = dict(epochs=30, patience=5, batch_size=256, lr=1e-3, weight_decay=1e-4,
-                shift_sec=10.0, invalid_rate=0.2, threads=0)
+                shift_sec=10.0, invalid_rate=0.2, threads=0, extra_cols=())
 
 
 class _Net(nn.Module):
-    def __init__(self):
+    """n_extra > 0 이면 풀링 뒤에 기준선 요약값(MSPC T²·Q, dev 등)을 붙인다."""
+
+    def __init__(self, n_extra: int = 0):
         super().__init__()
         layers, c_in = [], 3
         for c, k, p in ((16, 7, 4), (32, 5, 4), (32, 5, 2)):
@@ -32,12 +34,20 @@ class _Net(nn.Module):
             c_in = c
         self.conv = nn.Sequential(*layers)
         self.gru = nn.GRU(32, 32, batch_first=True, bidirectional=True)
-        self.head = nn.Sequential(nn.Dropout(0.3), nn.Linear(65, 1))
+        self.head = nn.Sequential(nn.Dropout(0.3), nn.Linear(65 + n_extra, 1))
 
-    def forward(self, x, bv):
+    def forward(self, x, bv, ex=None):
         h = self.conv(x).transpose(1, 2)
         h, _ = self.gru(h)
-        return self.head(torch.cat([h.mean(1), bv[:, None]], 1)).squeeze(1)
+        parts = [h.mean(1), bv[:, None]] + ([ex] if ex is not None else [])
+        return self.head(torch.cat(parts, 1)).squeeze(1)
+
+
+def extra_matrix(pers, cols) -> np.ndarray | None:
+    """기준선 요약 특징. 기준이 없으면(NaN) 0. 열마다 학습셋 기준으로 표준화는 fit 에서."""
+    if not cols:
+        return None
+    return np.nan_to_num(pers[list(cols)].to_numpy(np.float32), nan=0.0)
 
 
 def make_input(tacho: np.ndarray, base_rr: np.ndarray | None,
@@ -67,6 +77,7 @@ class RRNetTeacher(TeacherModel):
     def __init__(self, seed: int = 0, **params):
         super().__init__(seed, **{**DEFAULTS, **params})
         self.net: _Net | None = None
+        self.ex_norm = None
 
     def _threads(self):
         if self.params["threads"]:
@@ -77,7 +88,13 @@ class RRNetTeacher(TeacherModel):
         self._threads()
         torch.manual_seed(self.seed)
         rng = np.random.default_rng(self.seed)
-        self.net = _Net()
+        cols = list(p["extra_cols"] or ())
+        E = extra_matrix(X.pers, cols)
+        if E is not None:
+            valid = X.pers["baseline_valid"].to_numpy() > 0.5
+            mu, sd = E[valid].mean(0), E[valid].std(0) + 1e-6
+            self.ex_norm = (mu.tolist(), sd.tolist())
+        self.net = _Net(len(cols))
         opt = torch.optim.AdamW(self.net.parameters(), lr=p["lr"], weight_decay=p["weight_decay"])
         w = np.ones(len(y)) if w is None else w
         yt = torch.as_tensor(y, dtype=torch.float32)
@@ -99,7 +116,8 @@ class RRNetTeacher(TeacherModel):
                 if shift:
                     xb = torch.roll(xb, int(rng.integers(-shift, shift + 1)), dims=2)
                 bt = torch.as_tensor(b)
-                loss = (loss_fn(self.net(xb, bvb), yt[bt]) * wt[bt]).sum() / wt[bt].sum()
+                exb = self._extra(E, b, bvb)
+                loss = (loss_fn(self.net(xb, bvb, exb), yt[bt]) * wt[bt]).sum() / wt[bt].sum()
                 opt.zero_grad()
                 loss.backward()
                 opt.step()
@@ -120,12 +138,21 @@ class RRNetTeacher(TeacherModel):
         self.net.eval()
         return self
 
+    def _extra(self, E, idx, bv) -> torch.Tensor | None:
+        """표준화한 요약 특징. 기준이 무효(학습 중 강제 무효 포함)인 행은 0."""
+        if E is None:
+            return None
+        mu, sd = (np.asarray(v, np.float32) for v in self.ex_norm)
+        e = torch.as_tensor((E[idx] - mu) / sd)
+        return e * bv[:, None]
+
     def _batched(self, X: TeacherInput, bs: int = 2048) -> torch.Tensor:
+        E = extra_matrix(X.pers, list(self.params.get("extra_cols") or ()))
         outs = []
         for i in range(0, len(X), bs):
             sl = slice(i, i + bs)
             x, bv = make_input(X.tacho[sl], None if X.base_rr is None else X.base_rr[sl])
-            outs.append(self.net(x, bv))
+            outs.append(self.net(x, bv, self._extra(E, np.arange(len(X))[sl], bv)))
         return torch.cat(outs) if outs else torch.zeros(0)
 
     def predict_logit(self, X):
@@ -136,8 +163,14 @@ class RRNetTeacher(TeacherModel):
 
     def _save_state(self, path: Path) -> None:
         torch.save(self.net.state_dict(), path / "rrnet.pt")
+        if getattr(self, "ex_norm", None) is not None:
+            import json
+            (path / "rrnet_extra.json").write_text(json.dumps(self.ex_norm), encoding="utf-8")
 
     def _load_state(self, path: Path) -> None:
-        self.net = _Net()
+        import json
+        if (path / "rrnet_extra.json").exists():
+            self.ex_norm = tuple(json.loads((path / "rrnet_extra.json").read_text(encoding="utf-8")))
+        self.net = _Net(len(self.params.get("extra_cols") or ()))
         self.net.load_state_dict(torch.load(path / "rrnet.pt", map_location="cpu"))
         self.net.eval()
