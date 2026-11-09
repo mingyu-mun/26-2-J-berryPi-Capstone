@@ -75,8 +75,20 @@
 
 합성에서도 보이는 점: 개인 정규화를 빼면 AUROC 가 0.15 떨어집니다(사람마다 평소 심박을 크게 다르게 만든 탓). 이벤트 기반 라벨 데이터셋은 "정상" 창에 실제로는 졸린 창이 섞여 졸음 정밀도 0.85 를 만족하는 τ 가 없었고, `--exclude` 로 빼야 τ 가 정해졌습니다. 실데이터의 DD-Database 에서도 같은 일이 생길 수 있습니다.
 
-## 7. 남은 일
+## 7. 어댑터 (`src/driver_state/adapters/`, 실행 `scripts/convert.py`)
 
-- 어댑터: AdVitam Exp4, MPD-DF, DD-Database, DROZY. 원 파일 형식을 확인해야 하므로 `inspect` 결과를 보고 작성합니다 (`labels:` 설정은 어댑터가 씀).
+```text
+python scripts/convert.py drozy --src <DROZY 폴더> --out <규약 폴더 루트>
+python scripts/convert.py maus  --src <MAUS 폴더>  --out <규약 폴더 루트>
+python scripts/convert.py mand  --src <manD extracted> --out <규약 폴더 루트> [--participants P13 …] [--dehold]
+```
+
+| 데이터 | 용도 | 세션 | 라벨 | 실데이터 확인 (2026-11-09) |
+| --- | --- | --- | --- | --- |
+| DROZY | 교사 학습 | 14명, test1–3 (36개, 각 10분, ECG 512 Hz) | 테스트별 KSS 1개를 세션 전체에 (≥7 졸음 15세션 분량 870창, ≤5 정상 568창) | 유효 창 70%. D01·D04·D12 는 T파가 커서 R-peak 검출이 흔들림 (유효 0–18%) |
+| MAUS | 라벨링 대상 | 22명, rest(기준) + trial1–6 (153개, ECG·PPG 256 Hz) | 없음 (n-back, NASA-TLX 는 labels_orig) | 유효 창 98%. 003 은 휴식 녹화가 비어 있음 |
+| manD | 라벨링 대상 | 31명, 시나리오 6종 (183개) | 없음 (감정 시나리오는 labels_orig) | **유효 창 0.1%**. 256 Hz 표본 유지 신호로 실효 주기가 ECG 28–41 Hz, BVP 약 6 Hz. `--dehold` 보간 후에도 0.5% |
+
+남은 어댑터: AdVitam Exp4, MPD-DF, DD-Database (`inspect` 결과를 보고 작성).
 - 실데이터 LODO, τ, 대상 데이터(MAUS 등) 라벨링 — 노트북에서 실행.
 - 학생 로더가 `labels_window.csv` 를 우선 읽도록 한 줄 수정 (학생 쪽 작업).
