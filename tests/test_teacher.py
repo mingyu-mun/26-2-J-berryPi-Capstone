@@ -106,7 +106,10 @@ def test_personal_z_and_invalid(tables):
     P = norm.transform(win, prof, force)
     assert P["baseline_valid"].iloc[:5].eq(0).all() and P["baseline_valid"].iloc[5:].eq(1).all()
     assert P.iloc[:5].drop(columns="baseline_valid").isna().all().all()
-    assert len(P.columns) == len(spec.personal_feature_names())
+    from driver_state.teacher.personal import pers_columns
+    assert pers_columns(P.columns, "signed") == list(spec.personal_feature_names())
+    assert {"dev_30", "dev_120", "dev_300", "dev_core", "az_hr_120"} <= set(P.columns)
+    assert (P["az_hr_120"].dropna() >= 0).all()
     assert not set(TREND_FEATURES) & {c[2:] for c in P.columns}
 
 
