@@ -64,6 +64,9 @@ class CandidateModel(ABC):
     def _full_proba(self, proba: np.ndarray, present: np.ndarray) -> np.ndarray:
         """학습셋에 없던 클래스가 있어도 (N, n_classes) 형태를 보장."""
         out = np.zeros((proba.shape[0], self.n_classes), dtype=np.float64)
+        if len(present) == 1:      # 학습셋에 클래스가 하나뿐 (일부 라이브러리는 열을 2개 낸다)
+            out[:, present[0]] = 1.0
+            return out
         out[:, present] = proba
         return out
 

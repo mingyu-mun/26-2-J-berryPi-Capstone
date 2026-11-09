@@ -4,7 +4,7 @@
 
 ECG·PPG 생체신호를 중심으로 차량 CAN 데이터를 보조 정보로 활용하여, 운전 중 운전자의 특이사항과 상태 변화를 Raspberry Pi 내부에서 판단하는 캡스톤디자인 프로젝트입니다. 카메라 없이 생체센서 기반으로 개발합니다.
 
-> 현재 단계: 공개 데이터 기반 모델 골조와 센서 수집 환경 준비. 후보 모델 5종(MLP, CNN+BiLSTM, Random Forest, XGBoost, LightGBM)과 공통 입력 규약(개인 Baseline 포함)을 구현했으며, 현재는 합성 데이터로만 동작을 확인한 상태입니다. 시연 모델은 생체 단독(CAN 후순위)입니다. 공개 데이터셋 로더와 라벨 정의는 아직 없습니다.
+> 현재 단계: 공개 데이터 기반 모델 골조와 센서 수집 환경 준비. 후보 모델 5종(MLP, CNN+BiLSTM, Random Forest, XGBoost, LightGBM)과 공통 입력 규약(개인 Baseline 포함)을 구현했으며, 현재는 합성 데이터로만 동작을 확인한 상태입니다. 시연 모델은 생체 단독(CAN 후순위)이며, 분류기는 정상/졸음 2클래스, 최종 표시는 상태 머신의 정상/주의/졸음 3단계입니다(11/5 확정). 공개 데이터셋 로더와 졸음 정답 기준은 아직 없습니다.
 
 ## 프로젝트 개요
 
@@ -41,7 +41,8 @@ ECG·PPG 생체신호를 중심으로 차량 CAN 데이터를 보조 정보로 �
 
 ### 분류 및 데이터 관련 현재 합의 수준
 
-- 착수발표의 초기 목표는 **매우 양호 / 양호 / 피로 / 상태 이상**의 4단계 분류입니다.
+- 착수발표의 초기 목표는 **매우 양호 / 양호 / 피로 / 상태 이상**의 4단계 분류였습니다.
+- **11/5 확정:** 분류기는 **정상 / 졸음** 2클래스로 학습하고, 졸음 누적 상태 머신이 **정상 → 주의 → 졸음** 3단계를 표시합니다. 데이터팀 심박 클래스는 일단 쓰지 않습니다. 자세한 규칙은 [상태 머신](docs/state-machine.md)에 있습니다.
 - 후속 질의 정리에서는 상태 명칭이 임시 용어이며, 라벨은 정수값보다 구간화하는 방향이 선호된다고 기록되어 있습니다. 최종 클래스 수, 경계와 정답 기준은 미확정입니다.
 - 생체데이터 : 차량데이터 **8:2** 비율이 권장되었습니다. 입력 개수, 특징 비중 또는 모델 가중치를 뜻하는지는 추가 확인이 필요합니다.
 - 개인화 Baseline은 가능하다면 구현하는 방향이며, HMI도 결과물 품질 향상을 위한 권장 사항입니다.
@@ -148,6 +149,7 @@ ECG / PPG + 차량 CAN (실시간 또는 파일 Replay)
 │   ├── baseline.py               # 개인 Baseline 프로필·개인화 특징
 │   ├── normalization.py          # 정규화 파이프라인 (JSON 저장)
 │   ├── inference.py              # 시연 추론 (프로필 + Replay)
+│   ├── state_machine.py          # 윈도우 판정(-1) + 정상/주의/졸음 상태 머신
 │   ├── evaluate.py               # LOSO 비교 평가
 │   ├── synthetic.py              # 동작 확인용 합성 데이터
 │   └── models/                   # 후보 모델 5종
@@ -160,6 +162,7 @@ ECG / PPG + 차량 CAN (실시간 또는 파일 Replay)
     ├── data-and-model.md
     ├── input-spec.md             # 공통 입력 규약
     ├── data-handoff.md           # 데이터 팀 전달 규약
+    ├── state-machine.md          # 추론 후단 상태 머신
     └── models.md                 # 후보 모델 설명
 ```
 
@@ -177,7 +180,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python -m pytest -q tests                       # 입력 규약·모델 인터페이스 테스트
 python scripts/run_benchmark.py --synthetic --compare-personal   # 5개 모델 LOSO, 개인화 전/후
-python scripts/demo_pipeline.py                 # 30초 calibration → 프로필 → Replay 추론
+python scripts/demo_pipeline.py                 # 30초 calibration → 프로필 → Replay 추론 → 상태 머신
 ```
 
 결과는 `outputs/benchmark/`(Git 제외)에 저장됩니다. 입력 형식은 [공통 입력 규약](docs/input-spec.md), 모델 설명은 [후보 모델](docs/models.md)을 참고하세요. 보드 런타임과 설치 방법은 보드가 정해지면 추가합니다. 협업 방법은 [협업 가이드](CONTRIBUTING.md)를 참고하세요.
