@@ -11,8 +11,11 @@
 | drozy | 교사 학습 | ecg | KSS → 이진 (LabelRule.kss) |
 | mand | 교사 라벨링 대상 (학생) | ecg, ppg | 없음 (감정 시나리오는 labels_orig) |
 | maus | 교사 라벨링 대상 (학생) | ecg, ppg | 없음 (n-back 수준은 labels_orig) |
+| clas | 교사 라벨링 대상 (학생) | ecg, ppg | 없음 (자극 표시는 labels_orig) |
+| wesad | 교사 라벨링 대상 (학생) | ecg 700 Hz, ppg 64 Hz | 없음 (조건 구간은 labels_orig) |
 """
-from . import advitam, dddb, drozy, mand, maus, mpddf  # noqa: F401
+from . import advitam, clas, dddb, drozy, mand, maus, mpddf, wesad  # noqa: F401
 
-ADAPTERS = {"advitam": advitam, "mpddf": mpddf, "dddb": dddb, "drozy": drozy, "mand": mand, "maus": maus}
+ADAPTERS = {"advitam": advitam, "mpddf": mpddf, "dddb": dddb, "drozy": drozy, "mand": mand, "maus": maus,
+            "clas": clas, "wesad": wesad}
 TEACHER = ("advitam", "mpddf", "dddb", "drozy")

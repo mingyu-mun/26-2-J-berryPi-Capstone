@@ -7,7 +7,9 @@
     python scripts/convert.py drozy   --src <DROZY 폴더>         --out D:\\data
 교사 라벨링 대상
     python scripts/convert.py maus    --src <MAUS 폴더>          --out D:\\data
-    python scripts/convert.py mand    --src <manD extracted>     --out D:\\data [--participants P13 P14] [--dehold]
+    python scripts/convert.py clas    --src <CLAS 폴더>          --out D:\\data
+    python scripts/convert.py wesad   --src <WESAD 폴더>         --out D:\\data   (pkl 은 읽지 않음)
+    python scripts/convert.py mand   --src <manD extracted>     --out D:\\data [--participants P13 P14] [--dehold]
 
 결과: <out>/<dataset_id>/<subject>/<session>/{meta.json, data.npz, labels_orig.csv}
 그다음: python scripts/teacher.py rr --data <out>/advitam <out>/mpddf <out>/dddb <out>/drozy --out cache/rr
