@@ -235,6 +235,109 @@ def cmd_demo(a, cfg):
                  out=str(base / "labels"), tau_hi=None, tau_lo=None, jobs=a.jobs), cfg)
 
 
+def cmd_pair_stats(a, cfg):
+    """쌍 통계 표(4.5), CLAS 과제 대응(10장), 기준이 졸음이던 참가자(3.3)."""
+    from driver_state.teacher.pair_eval import load_all
+    from driver_state.teacher.pairs import PairIndex, STUDENT_TRAIN, clas_task_intervals, _stim_name
+    import re
+    out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
+    ann, prof, *_ = load_all(a.cache, a.student, a.data, a.tbin_sec)
+    sel = ann[ann["valid"] & (ann["src"].eq("teacher") | ann["dataset_id"].isin(STUDENT_TRAIN))]
+    stats = PairIndex(sel).stats()
+    # CLAS 자극 이름 패턴과 과제 구간
+    data = Path(a.data)
+    pat, iv_cnt = {}, {}
+    for p in sorted((data / "clas").rglob("labels_orig.csv")):
+        o = pd.read_csv(p)
+        for s in o["stimulus"]:
+            k = re.sub(r"[0-9]+", "#", _stim_name(s))
+            pat[k] = pat.get(k, 0) + 1
+        for _, _, kind in clas_task_intervals(o):
+            iv_cnt[kind] = iv_cnt.get(kind, 0) + 1
+    cond_cnt = ann[ann["dataset_id"].isin(["clas", "maus", "wesad"])].groupby(["dataset_id", "cond"]).size()
+    # 3.3
+    adv_kss0 = drozy_base = 0
+    drozy_not_test1 = []
+    for p in sorted((data / "advitam").glob("*/block1/labels_orig.csv")):
+        o = pd.read_csv(p)
+        r = o[o["item"] == "KSS_0"]
+        adv_kss0 += int(len(r) and float(r["kss"].iloc[0]) >= 7)
+    for key in prof.loc[prof["profile_key"].str.startswith("drozy/"), "profile_key"]:
+        g, _, ses = key.partition("#")
+        subj = g.split("/")[1]
+        if ses != "test1":
+            drozy_not_test1.append(f"{subj}:{ses}")
+        p = data / "drozy" / subj / ses / "labels_orig.csv"
+        if p.exists():
+            drozy_base += int(float(pd.read_csv(p)["kss"].iloc[0]) >= 7)
+    res = {"pair_stats": stats.to_dict(orient="index"), "clas_stimulus_patterns": pat,
+           "clas_task_intervals": iv_cnt, "cond_windows": {f"{d}/{c}": int(n) for (d, c), n in cond_cnt.items()},
+           "advitam_kss0_ge7": adv_kss0, "drozy_base_kss_ge7": drozy_base, "drozy_base_not_test1": drozy_not_test1,
+           "base_kind": ann.groupby(["dataset_id", "base_kind"])["group"].nunique().rename("subjects")
+                          .reset_index().to_dict(orient="records")}
+    (out / "pair_stats.json").write_text(json.dumps(res, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    print(stats.to_string())
+    print(json.dumps({k: v for k, v in res.items() if k != "pair_stats"}, ensure_ascii=False, indent=1, default=str))
+
+
+def cmd_pair_eval(a, cfg):
+    from driver_state.teacher.pair_eval import (README_B, README_M3_RRNET, README_TIME, evaluate, load_all,
+                                                report_markdown, run_lodo, run_m7)
+    from driver_state.teacher.metrics_time import m2_dataset, m3_dataset
+    from driver_state.teacher.evaluate import _auc
+    spec = _spec(cfg)
+    out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
+    ann, prof, wt, pt, ws, ps = load_all(a.cache, a.student, a.data, a.tbin_sec)
+    t0 = time.time()
+    if (out / "oof_lodo.parquet").exists() and (out / "wesad_scores.parquet").exists() and a.resume:
+        oof, wes = pd.read_parquet(out / "oof_lodo.parquet"), pd.read_parquet(out / "wesad_scores.parquet")
+        print("LODO 결과를 이어서 씀 (--resume)")
+    else:
+        oof, wes = run_lodo(ann, prof, wt, pt, ws, ps, a.b0_oof, a.conds, a.seeds, spec)
+        oof.to_parquet(out / "oof_lodo.parquet")          # M7 전에 먼저 저장 (중단 대비)
+        wes.to_parquet(out / "wesad_scores.parquet")
+    # 재현 확인 (5.1, 7장): 행 선택 전 전체 행
+    repro = {"B0_raw": {}, "B1_raw": {}, "BTt_within_session": {}, "B0_M3": {}}
+    for d, g in oof.groupby("dataset_id"):
+        if "d_B0" in g:
+            gg = g[np.isfinite(g["d_B0"])]
+            repro["B0_raw"][d] = (round(_auc(gg["y"].to_numpy(), gg["d_B0"].to_numpy()), 3), README_B["rrnet"][d])
+            if d in README_M3_RRNET:
+                repro["B0_M3"][d] = (round(m3_dataset(gg, "d_B0"), 3), README_M3_RRNET[d])
+        gg = g[np.isfinite(g["d_B1"])]
+        repro["B1_raw"][d] = (round(_auc(gg["y"].to_numpy(), gg["d_B1"].to_numpy()), 3), README_B["dev_core"][d])
+        if "d_BTt" in g and d in README_TIME:
+            num = den = 0.0
+            for _, s in g.groupby(["group", "session_id"]):
+                if s["y"].nunique() == 2:
+                    n = (s["y"] == 1).sum() * (s["y"] == 0).sum()
+                    num += _auc(s["y"].to_numpy(), s["d_BTt"].to_numpy()) * n; den += n
+            repro["BTt_within_session"][d] = (round(num / den, 3) if den else None, README_TIME[d])
+    print("재현 확인:", json.dumps(repro, ensure_ascii=False))
+    m7_path = out / "m7_drozy_5fold.parquet"
+    if a.skip_m7:
+        m7 = None
+    elif a.resume and m7_path.exists():
+        m7 = pd.read_parquet(m7_path)
+    else:
+        m7 = run_m7(ann, prof, a.conds, a.seeds, spec)
+        m7.to_parquet(m7_path)                              # 지표 계산 전에 저장 (중단 대비)
+    print("학습 끝, 지표 계산", flush=True)
+    cond_cols = (["BTt", "BTfit"] if "BT" in a.conds else []) + [c for c in ("P0", "P1", "P2") if c in a.conds] \
+        + (["P0raw"] if "P0" in a.conds else []) + (["B0"] if "d_B0" in oof else []) + ["B1"]
+    rep = evaluate(oof, wes, m7, cond_cols, a.seeds)
+    rep["repro"] = repro
+    rep["elapsed_sec"] = round(time.time() - t0)
+    oof.to_parquet(out / "oof_lodo.parquet")
+    wes.to_parquet(out / "wesad_scores.parquet")
+    if m7 is not None:
+        m7.to_parquet(out / "m7_drozy_5fold.parquet")
+    (out / "report_pair.json").write_text(json.dumps(rep, ensure_ascii=False, indent=2, default=float), encoding="utf-8")
+    md = report_markdown(rep, repro)
+    (out / "report_pair.md").write_text(md, encoding="utf-8")
+    print(md)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", default=str(ROOT / "configs/teacher.yaml"))
@@ -260,9 +363,18 @@ def main() -> None:
     p = sp.add_parser("demo"); p.add_argument("--out", default="outputs/teacher_demo")
     p.add_argument("--subjects", type=int, default=6); p.add_argument("--minutes", type=float, default=30.0)
     p.add_argument("--jobs", type=int, default=4); p.add_argument("--models", nargs="*")
+    for name in ("pair-stats", "pair-eval"):
+        p = sp.add_parser(name); p.add_argument("--cache", required=True); p.add_argument("--student", required=True)
+        p.add_argument("--data", required=True, help="규약 폴더 루트 (labels_orig.csv)"); p.add_argument("--out", required=True)
+        p.add_argument("--tbin-sec", dest="tbin_sec", type=float, default=300.0, help="시간 층 폭 (규격 8.3)")
+        if name == "pair-eval":
+            p.add_argument("--b0-oof", dest="b0_oof"); p.add_argument("--conds", nargs="+", default=["BT", "P0", "P1", "P2"])
+            p.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2, 3, 4])
+            p.add_argument("--skip-m7", dest="skip_m7", action="store_true")
+            p.add_argument("--resume", action="store_true", help="저장된 oof_lodo·wesad_scores 가 있으면 LODO 를 건너뜀")
     a = ap.parse_args()
     cfg = load_cfg(a.config)
-    globals()[f"cmd_{a.cmd}"](a, cfg)
+    globals()[f"cmd_{a.cmd.replace('-', '_')}"](a, cfg)
 
 
 if __name__ == "__main__":
