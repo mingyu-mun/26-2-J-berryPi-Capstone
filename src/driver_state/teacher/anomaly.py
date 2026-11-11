@@ -125,7 +125,9 @@ def run(win_t, prof_t, ann_t, win_s, prof_s, ann_s, b0_oof, conds, seeds, spec: 
         wpart["fold"] = test
         wpart["s_B1"] = dev_ws
         # B1 보정 (P 용)
-        lr = LogisticRegression().fit(z_matrix(norm, win_t[tr], prof_t, names)[1][:, None], y_tr, sample_weight=w_tr)
+        dev_tr = z_matrix(norm, win_t[tr], prof_t, names)[1]
+        okd = np.isfinite(dev_tr)
+        lr = LogisticRegression().fit(dev_tr[okd, None], y_tr[okd], sample_weight=w_tr[okd])
         a = max(float(lr.coef_[0, 0]), 1e-3)
         part["p_B1"] = 1 / (1 + np.exp(-(a * dev_te + float(lr.intercept_[0]))))
         for c in conds:
