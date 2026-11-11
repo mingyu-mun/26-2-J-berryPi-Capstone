@@ -1,0 +1,43 @@
+{
+  "profiles_with_ref": {
+    "advitam": 62,
+    "dddb": 20,
+    "drozy": 12,
+    "mpddf": 50,
+    "wesad": 15
+  },
+  "profiles_total": {
+    "advitam": 63,
+    "dddb": 20,
+    "drozy": 14,
+    "mpddf": 50,
+    "wesad": 15
+  },
+  "short_baseline": [
+    "advitam/02_DU16#baseline",
+    "advitam/11_AU16#baseline",
+    "advitam/12_AC10#baseline",
+    "advitam/16_AU16#baseline",
+    "advitam/17_AU10#baseline",
+    "advitam/19_AC16#baseline",
+    "advitam/22_DC10#baseline",
+    "advitam/25_AC10#baseline",
+    "advitam/27_DU16#baseline",
+    "advitam/33_AU16#baseline",
+    "advitam/39_DC16#baseline",
+    "advitam/40_DC10#baseline",
+    "advitam/44_DU16#baseline",
+    "advitam/46_AU16#baseline",
+    "advitam/49_AC16#baseline",
+    "advitam/50_AU16#baseline",
+    "advitam/51_DC10#baseline",
+    "advitam/52_DU16#baseline",
+    "advitam/53_AC16#baseline",
+    "advitam/54_AU16#baseline",
+    "advitam/55_DC16#baseline",
+    "advitam/60_DU16#baseline",
+    "advitam/61_DC10#baseline",
+    "advitam/62_AU16#baseline"
+  ],
+  "ref_tachos_per_profile_median": 1.0
+}
