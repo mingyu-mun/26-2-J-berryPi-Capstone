@@ -338,6 +338,60 @@ def cmd_pair_eval(a, cfg):
     print(md)
 
 
+def cmd_anomaly_eval(a, cfg):
+    """docs/teacher-anomaly-stage1.md: 방향 없는 학습 거리 A1~A3 vs B0·B1."""
+    from driver_state.teacher.anomaly import evaluate as an_eval, report_markdown as an_md, run as an_run
+    from driver_state.teacher.pair_eval import load_all
+    from driver_state.teacher.metrics_time import m1_dataset
+    spec = _spec(cfg)
+    out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
+    ann, prof, wt, pt, ws, ps = load_all(a.cache, a.student, a.data, a.tbin_sec)
+    ann_t = ann[ann["src"] == "teacher"].reset_index(drop=True)
+    ann_s = ann[ann["src"] == "student"].reset_index(drop=True)
+    rr_ctx = None
+    if any(c.startswith("R") for c in a.conds):
+        from driver_state.teacher.anomaly_rr import base_rr_of, reference_tachograms
+        from driver_state.teacher.features import build_tachograms
+        rr_t = load_rr_cache(Path(a.cache) / "rr")
+        rr_w = [r for r in load_rr_cache(Path(a.student) / "rr") if r.dataset_id == "wesad"]
+        refs_t, short_t = reference_tachograms(rr_t, spec)
+        refs_w, short_w = reference_tachograms(rr_w, spec)
+        T_t = np.load(Path(a.cache) / "tacho.npy", mmap_mode="r")
+        wmask = (ws["dataset_id"] == "wesad").to_numpy()
+        T_s = np.zeros((len(ws), 2, T_t.shape[2]), np.float16)
+        T_s[wmask] = build_tachograms(rr_w, ws[wmask], spec)
+        base = {**base_rr_of(pt).to_dict(), **base_rr_of(ps).to_dict()}
+        rr_ctx = {"tacho_t": np.asarray(T_t), "tacho_s": T_s, "refs": {**refs_t, **refs_w}, "base": base,
+                  "device": "cuda" if __import__("torch").cuda.is_available() else "cpu"}
+        info = {"profiles_with_ref": {d: sum(k.startswith(d + "/") for k in rr_ctx["refs"]) for d in
+                                      ("advitam", "dddb", "drozy", "mpddf", "wesad")},
+                "profiles_total": {d: int(pd.concat([pt, ps])["profile_key"].str.startswith(d + "/").sum()) for d in
+                                   ("advitam", "dddb", "drozy", "mpddf", "wesad")},
+                "short_baseline": [k for k, v in {**short_t, **short_w}.items() if v],
+                "ref_tachos_per_profile_median": float(np.median([len(v) for v in rr_ctx["refs"].values()]))}
+        print("기준 타코그램:", json.dumps(info, ensure_ascii=False), flush=True)
+        (out / "reference_info.json").write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
+    oof_p, wes_p = out / "oof_lodo.parquet", out / "wesad_scores.parquet"
+    if a.resume and oof_p.exists() and wes_p.exists():
+        oof, wes = pd.read_parquet(oof_p), pd.read_parquet(wes_p)
+    else:
+        oof, wes = an_run(wt, pt, ann_t, ws, ps, ann_s, a.b0_oof, a.conds, a.seeds, spec, rr_ctx=rr_ctx)
+        oof.to_parquet(oof_p); wes.to_parquet(wes_p)
+    repro = {}
+    for c in ("B0", "B1"):
+        col = f"s_{c}"
+        if col in oof:
+            r = oof[np.isfinite(oof[col])]
+            repro[c] = round(float(np.mean([m1_dataset(g, col)[0] for _, g in r.groupby("dataset_id")])), 3)
+    print("재현 확인 (M1 평균):", repro, flush=True)
+    rep = an_eval(oof, wes, (["B0"] if "s_B0" in oof else []) + ["B1"] + a.conds, a.seeds)
+    rep["repro"] = repro
+    (out / "report_anomaly.json").write_text(json.dumps(rep, ensure_ascii=False, indent=2, default=float), encoding="utf-8")
+    md = an_md(rep, repro)
+    (out / "report_anomaly.md").write_text(md, encoding="utf-8")
+    print(md)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", default=str(ROOT / "configs/teacher.yaml"))
@@ -363,6 +417,10 @@ def main() -> None:
     p = sp.add_parser("demo"); p.add_argument("--out", default="outputs/teacher_demo")
     p.add_argument("--subjects", type=int, default=6); p.add_argument("--minutes", type=float, default=30.0)
     p.add_argument("--jobs", type=int, default=4); p.add_argument("--models", nargs="*")
+    p = sp.add_parser("anomaly-eval"); p.add_argument("--cache", required=True); p.add_argument("--student", required=True)
+    p.add_argument("--data", required=True); p.add_argument("--out", required=True); p.add_argument("--b0-oof", dest="b0_oof")
+    p.add_argument("--conds", nargs="+", default=["F2", "R1", "R2", "R3"]); p.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2, 3, 4])
+    p.add_argument("--tbin-sec", dest="tbin_sec", type=float, default=150.0); p.add_argument("--resume", action="store_true")
     for name in ("pair-stats", "pair-eval"):
         p = sp.add_parser(name); p.add_argument("--cache", required=True); p.add_argument("--student", required=True)
         p.add_argument("--data", required=True, help="규약 폴더 루트 (labels_orig.csv)"); p.add_argument("--out", required=True)
