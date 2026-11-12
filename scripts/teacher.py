@@ -395,6 +395,28 @@ def cmd_anomaly_eval(a, cfg):
     print(md)
 
 
+def cmd_f2c_label(a, cfg):
+    """docs/student-f2c-stage1.md 1장: 교사 F2C 로 창별 라벨 표."""
+    from driver_state.teacher.f2c_label import build, summary
+    from driver_state.teacher.pair_eval import load_all
+    spec = _spec(cfg)
+    out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
+    ann, prof, wt, pt, ws, ps = load_all(a.cache, a.student, a.data, 150.0, a.nw_dir)
+    ann_t = ann[ann["src"] == "teacher"].reset_index(drop=True)
+    ann_s = ann[ann["src"] == "student"].reset_index(drop=True)
+    assert len(ann_t) == len(wt) and len(ann_s) == len(ws), "창 표와 주석 표 길이가 다름"
+    lab, params = build(wt, pt, ann_t, ws, ps, ann_s, pd.read_parquet(a.oof), spec, a.seeds)
+    lab.to_parquet(out / "f2c_labels.parquet")
+    arrs = {}
+    for tag, lst in params.items():
+        for i, p in enumerate(lst):
+            arrs[f"{tag}/s{i}/W"] = p["W"]; arrs[f"{tag}/s{i}/alpha"] = np.float32(p["alpha"]); arrs[f"{tag}/s{i}/b"] = np.float32(p["b"])
+    np.savez(out / "f2c_params.npz", **arrs)
+    sm = summary(lab)
+    (out / "label_summary.txt").write_text(sm.to_string(), encoding="utf-8")
+    print(sm.to_string(), flush=True)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", default=str(ROOT / "configs/teacher.yaml"))
@@ -425,6 +447,10 @@ def main() -> None:
     p.add_argument("--conds", nargs="+", default=["F2", "R1", "R2", "R3"]); p.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2, 3, 4])
     p.add_argument("--tbin-sec", dest="tbin_sec", type=float, default=150.0); p.add_argument("--resume", action="store_true")
     p.add_argument("--features", choices=["rr", "nw", "rrnw"], default="rr"); p.add_argument("--nw-dir", dest="nw_dir")
+    p = sp.add_parser("f2c-label"); p.add_argument("--cache", required=True); p.add_argument("--student", required=True)
+    p.add_argument("--data", required=True); p.add_argument("--out", required=True); p.add_argument("--nw-dir", dest="nw_dir", required=True)
+    p.add_argument("--oof", required=True, help="anomaly-eval --features rrnw 의 oof_lodo.parquet")
+    p.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2, 3, 4])
     for name in ("pair-stats", "pair-eval"):
         p = sp.add_parser(name); p.add_argument("--cache", required=True); p.add_argument("--student", required=True)
         p.add_argument("--data", required=True, help="규약 폴더 루트 (labels_orig.csv)"); p.add_argument("--out", required=True)
