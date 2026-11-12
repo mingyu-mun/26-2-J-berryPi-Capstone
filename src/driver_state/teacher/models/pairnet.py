@@ -30,8 +30,8 @@ class _Body(nn.Module):
         return torch.logaddexp(outs[0], outs[1]) - math.log(2.0), outs
 
 
-def n_params(heads: int) -> int:
-    return sum(p.numel() for p in _Body(36, heads).parameters())
+def n_params(heads: int, d_in: int = 36) -> int:
+    return sum(p.numel() for p in _Body(d_in, heads).parameters())
 
 
 def _l_r(sa, sb):
@@ -53,12 +53,12 @@ def _mean(x):
 class PairNet:
     """cond: 'P0' (창 BCE), 'P1' (쌍, 헤드 1), 'P2' (쌍, 헤드 2)."""
 
-    def __init__(self, cond: str, seed: int, groups: dict[str, np.ndarray], hp: dict | None = None):
+    def __init__(self, cond: str, seed: int, groups: dict[str, np.ndarray], hp: dict | None = None, d_in: int = 36):
         self.cond, self.seed = cond, seed
         self.hp = {**HP, **(hp or {})}
         self.groups = groups                       # {"120": bool[36], "300": bool[36]}
         torch.manual_seed(seed)
-        self.net = _Body(36, 2 if cond == "P2" else 1)
+        self.net = _Body(d_in, 2 if cond == "P2" else 1)
         self.rng = np.random.default_rng(seed + 7919)
 
     # -------------------------------------------------------------- 입력 가공

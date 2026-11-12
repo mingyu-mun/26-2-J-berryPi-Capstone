@@ -37,13 +37,13 @@ def z_matrix(norm: PersonalNormalizer, win: pd.DataFrame, prof: pd.DataFrame, na
 
 
 class _Score(nn.Module):
-    def __init__(self, kind: str, k: int = 8):
+    def __init__(self, kind: str, k: int = 8, d_in: int = 36):
         super().__init__()
         self.kind = kind
         if kind == "lin":
-            self.W = nn.Parameter(torch.randn(k, 36) * 0.1)
+            self.W = nn.Parameter(torch.randn(k, d_in) * 0.1)
         else:
-            self.f = nn.Sequential(nn.Linear(36, 32), nn.GELU(), nn.Linear(32, 16))
+            self.f = nn.Sequential(nn.Linear(d_in, 32), nn.GELU(), nn.Linear(32, 16))
         self.alpha = nn.Parameter(torch.zeros(()))
         self.b = nn.Parameter(torch.zeros(()))
 
@@ -63,13 +63,13 @@ def train_model(kind: str, Z: np.ndarray, y: np.ndarray, w: np.ndarray, seed: in
     hp = {**HP, **(hp or {})}
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed + 31)
-    m = _Score(kind, hp["k"])
+    m = _Score(kind, hp["k"], Z.shape[1])
     opt = torch.optim.AdamW(m.parameters(), lr=hp["lr_lin"] if kind == "lin" else hp["lr_mlp"], weight_decay=hp["wd"])
     p = w / w.sum()
     Zt, yt = torch.as_tensor(Z), torch.as_tensor(y, dtype=torch.float32)
     for _ in range(hp["steps"]):
         b = torch.as_tensor(rng.choice(len(y), hp["batch"], p=p))
-        z = Zt[b] + hp["noise"] * torch.randn(len(b), 36) * (Zt[b] != 0)
+        z = Zt[b] + hp["noise"] * torch.randn(len(b), Zt.shape[1]) * (Zt[b] != 0)
         logit, _ = m(z)
         loss = nn.functional.binary_cross_entropy_with_logits(logit, yt[b])
         opt.zero_grad(); loss.backward(); opt.step()
@@ -84,7 +84,7 @@ def predict(m: _Score, Z: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def run(win_t, prof_t, ann_t, win_s, prof_s, ann_s, b0_oof, conds, seeds, spec: TeacherSpec, log=print,
-        rr_ctx: dict | None = None):
+        rr_ctx: dict | None = None, features: str = "rr"):
     """rr_ctx: {"tacho_t": (N_t,2,T), "tacho_s": (N_s,2,T), "refs": {profile_key: (k,2,T)}, "base": {profile_key: RR ms},
     "device": str}. 있으면 평가 행을 기준 타코그램이 있는 참가자로 제한하고 R1~R3 를 돌린다."""
     names = list(spec.baseline_feature_names)
@@ -97,6 +97,13 @@ def run(win_t, prof_t, ann_t, win_s, prof_s, ann_s, b0_oof, conds, seeds, spec: 
     wf = wesad_folds(ann_s.loc[wes, "group"])
     wes_fold = ann_s["group"].map(wf).fillna(-1).astype(int).to_numpy()
     wes_ok = wes & win_s["valid"].to_numpy() & (ann_s["baseline_valid"].to_numpy() > 0.5)
+    if features != "rr":            # NormWear 표현과 기준 벡터가 있는 창만 (teacher-normwear-stage1.md 3장)
+        from .nw_features import NW_COLS
+        def has_nw(win, prof):
+            okp = prof.set_index("profile_key")[[f"m_{c}" for c in NW_COLS]].notna().all(1)
+            return win["profile_key"].map(okp).fillna(False).to_numpy(bool) & win[NW_COLS].notna().all(1).to_numpy()
+        use_t &= has_nw(win_t, prof_t)
+        wes_ok &= has_nw(win_s, prof_s)
     if rr_ctx is not None:
         wes_ok &= has_ref(win_s)
     parts, wparts = [], []
@@ -111,6 +118,15 @@ def run(win_t, prof_t, ann_t, win_s, prof_s, ann_s, b0_oof, conds, seeds, spec: 
         ws_te = wes_ok & (wes_fold == fi) & np.isin(ann_s["cond"].to_numpy(), ["stress", "other"])
         Zs_tr, _ = z_matrix(norm, win_s[ws_tr], prof_s, names)
         Zs_te, dev_ws = z_matrix(norm, win_s[ws_te], prof_s, names)
+        if features != "rr":
+            from .nw_features import z_of
+            wtr = win_t[tr]
+            nz = [z_of(wtr, win_t[tr], prof_t), z_of(wtr, win_t[te], prof_t),
+                  z_of(wtr, win_s[ws_tr], prof_s), z_of(wtr, win_s[ws_te], prof_s)]
+            if features == "nw":
+                Zt_tr, Zt_te, Zs_tr, Zs_te = nz
+            else:
+                Zt_tr, Zt_te, Zs_tr, Zs_te = [np.concatenate([a_, b_], 1) for a_, b_ in zip((Zt_tr, Zt_te, Zs_tr, Zs_te), nz)]
         y_tr = win_t.loc[tr, "y"].to_numpy(int)
         w_tr = sample_weights(ds[tr], win_t.loc[tr, "group"].to_numpy(), y_tr)
         gs = win_s.loc[ws_tr, "group"].to_numpy()

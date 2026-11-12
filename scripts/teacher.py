@@ -287,13 +287,16 @@ def cmd_pair_eval(a, cfg):
     from driver_state.teacher.evaluate import _auc
     spec = _spec(cfg)
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
-    ann, prof, wt, pt, ws, ps = load_all(a.cache, a.student, a.data, a.tbin_sec)
+    ann, prof, wt, pt, ws, ps = load_all(a.cache, a.student, a.data, a.tbin_sec, getattr(a, "nw_dir", None))
+    from driver_state.teacher.pairs import feature_names as _fn
+    from driver_state.teacher.nw_features import NW_COLS
+    names = {"rr": _fn(spec), "nw": NW_COLS, "rrnw": _fn(spec) + NW_COLS}[getattr(a, "features", "rr")]
     t0 = time.time()
     if (out / "oof_lodo.parquet").exists() and (out / "wesad_scores.parquet").exists() and a.resume:
         oof, wes = pd.read_parquet(out / "oof_lodo.parquet"), pd.read_parquet(out / "wesad_scores.parquet")
         print("LODO 결과를 이어서 씀 (--resume)")
     else:
-        oof, wes = run_lodo(ann, prof, wt, pt, ws, ps, a.b0_oof, a.conds, a.seeds, spec)
+        oof, wes = run_lodo(ann, prof, wt, pt, ws, ps, a.b0_oof, a.conds, a.seeds, spec, names=names)
         oof.to_parquet(out / "oof_lodo.parquet")          # M7 전에 먼저 저장 (중단 대비)
         wes.to_parquet(out / "wesad_scores.parquet")
     # 재현 확인 (5.1, 7장): 행 선택 전 전체 행
@@ -320,7 +323,7 @@ def cmd_pair_eval(a, cfg):
     elif a.resume and m7_path.exists():
         m7 = pd.read_parquet(m7_path)
     else:
-        m7 = run_m7(ann, prof, a.conds, a.seeds, spec)
+        m7 = run_m7(ann, prof, a.conds, a.seeds, spec, names=names)
         m7.to_parquet(m7_path)                              # 지표 계산 전에 저장 (중단 대비)
     print("학습 끝, 지표 계산", flush=True)
     cond_cols = (["BTt", "BTfit"] if "BT" in a.conds else []) + [c for c in ("P0", "P1", "P2") if c in a.conds] \
@@ -345,7 +348,7 @@ def cmd_anomaly_eval(a, cfg):
     from driver_state.teacher.metrics_time import m1_dataset
     spec = _spec(cfg)
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
-    ann, prof, wt, pt, ws, ps = load_all(a.cache, a.student, a.data, a.tbin_sec)
+    ann, prof, wt, pt, ws, ps = load_all(a.cache, a.student, a.data, a.tbin_sec, a.nw_dir)
     ann_t = ann[ann["src"] == "teacher"].reset_index(drop=True)
     ann_s = ann[ann["src"] == "student"].reset_index(drop=True)
     rr_ctx = None
@@ -375,7 +378,7 @@ def cmd_anomaly_eval(a, cfg):
     if a.resume and oof_p.exists() and wes_p.exists():
         oof, wes = pd.read_parquet(oof_p), pd.read_parquet(wes_p)
     else:
-        oof, wes = an_run(wt, pt, ann_t, ws, ps, ann_s, a.b0_oof, a.conds, a.seeds, spec, rr_ctx=rr_ctx)
+        oof, wes = an_run(wt, pt, ann_t, ws, ps, ann_s, a.b0_oof, a.conds, a.seeds, spec, rr_ctx=rr_ctx, features=a.features)
         oof.to_parquet(oof_p); wes.to_parquet(wes_p)
     repro = {}
     for c in ("B0", "B1"):
@@ -421,6 +424,7 @@ def main() -> None:
     p.add_argument("--data", required=True); p.add_argument("--out", required=True); p.add_argument("--b0-oof", dest="b0_oof")
     p.add_argument("--conds", nargs="+", default=["F2", "R1", "R2", "R3"]); p.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2, 3, 4])
     p.add_argument("--tbin-sec", dest="tbin_sec", type=float, default=150.0); p.add_argument("--resume", action="store_true")
+    p.add_argument("--features", choices=["rr", "nw", "rrnw"], default="rr"); p.add_argument("--nw-dir", dest="nw_dir")
     for name in ("pair-stats", "pair-eval"):
         p = sp.add_parser(name); p.add_argument("--cache", required=True); p.add_argument("--student", required=True)
         p.add_argument("--data", required=True, help="규약 폴더 루트 (labels_orig.csv)"); p.add_argument("--out", required=True)
@@ -430,6 +434,7 @@ def main() -> None:
             p.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2, 3, 4])
             p.add_argument("--skip-m7", dest="skip_m7", action="store_true")
             p.add_argument("--resume", action="store_true", help="저장된 oof_lodo·wesad_scores 가 있으면 LODO 를 건너뜀")
+            p.add_argument("--features", choices=["rr", "nw", "rrnw"], default="rr"); p.add_argument("--nw-dir", dest="nw_dir")
     a = ap.parse_args()
     cfg = load_cfg(a.config)
     globals()[f"cmd_{a.cmd.replace('-', '_')}"](a, cfg)

@@ -29,11 +29,17 @@ def sigmoid(x):
 
 
 # ---------------------------------------------------------------- 데이터 준비
-def load_all(cache: str, student: str, data_root: str | None, tbin_sec: float = 300.0):
+def load_all(cache: str, student: str, data_root: str | None, tbin_sec: float = 300.0, nw_dir: str | None = None):
     c, s = Path(cache), Path(student)
     wt, pt = pd.read_parquet(c / "windows.parquet"), pd.read_parquet(c / "profiles.parquet")
     ws, ps = pd.read_parquet(s / "windows.parquet"), pd.read_parquet(s / "profiles.parquet")
     info = read_session_info([c / "rr", s / "rr"])
+    if nw_dir:                                   # NormWear 표현 열 붙이기 (teacher-normwear-stage1.md)
+        from .nw_features import attach, fit_pca
+        comps, var = fit_pca(ws, Path(nw_dir))
+        print(f"NormWear PCA 32축 설명 분산 {var.sum():.3f}", flush=True)
+        wt, pt = attach(wt, pt, nw_dir, comps)
+        ws, ps = attach(ws, ps, nw_dir, comps)
     prof = pd.concat([pt, ps], ignore_index=True)
     at = annotate(wt, pt, info, data_root, tbin_sec)
     ast = annotate(ws, ps, info, data_root, tbin_sec)
@@ -80,6 +86,7 @@ class FoldRunner:
         def d_of(model, rows):
             d = model.score_diff(Z[rows], Xr[rows])
             d[~bv[rows]] = np.nan
+            d[~np.isfinite(Xr[rows]).any(1) | ~np.isfinite(Z[rows]).any(1)] = np.nan   # 표현·기준 벡터 없음
             return d
 
         def calibrate(d_cal):
@@ -94,7 +101,7 @@ class FoldRunner:
             res = {"d_s": [], "logit_s": [], "raw_s": [], "ab": []}
             for seed in seeds:
                 t0 = time.perf_counter()
-                net = PairNet(cond, seed, self.groups)
+                net = PairNet(cond, seed, self.groups, d_in=len(self.names))
                 if cond == "P0":
                     w_idx = np.flatnonzero(teacher_train_mask & usable(ann))
                     w = sample_weights(ann["dataset_id"].to_numpy()[w_idx], ann["group"].to_numpy()[w_idx],
@@ -135,8 +142,8 @@ def train_masks(ds: np.ndarray, test: str) -> tuple[np.ndarray, np.ndarray]:
     return teacher_train | np.isin(ds, STUDENT_TRAIN), teacher_train
 
 
-def run_lodo(ann, prof, wt, pt, ws, ps, b0_oof: str | None, conds, seeds, spec, log=print):
-    names = feature_names(spec)
+def run_lodo(ann, prof, wt, pt, ws, ps, b0_oof: str | None, conds, seeds, spec, log=print, names=None):
+    names = names or feature_names(spec)
     runner = FoldRunner(ann, prof, names, spec, log)
     ds = ann["dataset_id"].to_numpy()
     is_teacher = np.isin(ds, TEACHER_DATASETS)
@@ -189,8 +196,8 @@ def run_lodo(ann, prof, wt, pt, ws, ps, b0_oof: str | None, conds, seeds, spec, 
 
 
 # ---------------------------------------------------------------- M7: DROZY 참가자 5-fold
-def run_m7(ann, prof, conds, seeds, spec, log=print, n_folds=5):
-    names = feature_names(spec)
+def run_m7(ann, prof, conds, seeds, spec, log=print, n_folds=5, names=None):
+    names = names or feature_names(spec)
     runner = FoldRunner(ann, prof, names, spec, log)
     ds = ann["dataset_id"].to_numpy()
     groups = np.random.default_rng(0).permutation(ann.loc[ds == "drozy", "group"].unique())
