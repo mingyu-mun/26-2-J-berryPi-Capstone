@@ -20,7 +20,7 @@ from scipy.ndimage import median_filter
 from scipy.signal import butter, sosfiltfilt
 
 from ..data import Recording
-from ..features import detect_ecg_peaks
+from ..features import detect_ecg_peaks, detect_ppg_peaks_adaptive
 from ..preprocessing import prepare_channel, window_quality
 from ..spec import InputSpec
 from .spec import TeacherSpec
@@ -99,15 +99,23 @@ def flag_abnormal(rr: np.ndarray, jump: float) -> np.ndarray:
     return bad
 
 
-def extract_rr(rec: Recording, spec: TeacherSpec) -> RRSeries:
+def extract_rr(rec: Recording, spec: TeacherSpec, channel: str = "ecg") -> RRSeries:
+    """channel="ppg": 맥박 간격(PRV). 적응 최소 간격으로 찾은 수축기 최고점을 ±80 ms 안에서 포물선 보간."""
     ins = _input_spec(spec, rec)
-    filt, raw = prepare_channel(rec.signals["ecg"], rec.fs["ecg"], "ecg", ins, rec.prefiltered)
+    filt, raw = prepare_channel(rec.signals[channel], rec.fs[channel], channel, ins, rec.prefiltered)
     fs = spec.fs
-    peaks = detect_ecg_peaks(filt, fs)
-    # 정밀 위치는 QRS 대역(5–25 Hz) 신호로 잡는다 (기저선 영향 제거, 극성 무관)
-    sos = butter(3, [5.0, min(25.0, 0.45 * fs)], btype="band", fs=fs, output="sos")
-    qrs = sosfiltfilt(sos, filt)
-    beat_t = refine_peaks(qrs, peaks, fs) / fs if len(peaks) else np.zeros(0)
+    if channel == "ppg":
+        peaks = detect_ppg_peaks_adaptive(filt, fs)
+        sos = butter(3, [0.5, min(8.0, 0.45 * fs)], btype="band", fs=fs, output="sos")
+        pw = sosfiltfilt(sos, filt)
+        pw = pw - pw.min()                       # refine_peaks 는 |x| 최대를 찾으므로 양수로
+        beat_t = refine_peaks(pw, peaks, fs, search_sec=0.08) / fs if len(peaks) else np.zeros(0)
+    else:
+        peaks = detect_ecg_peaks(filt, fs)
+        # 정밀 위치는 QRS 대역(5–25 Hz) 신호로 잡는다 (기저선 영향 제거, 극성 무관)
+        sos = butter(3, [5.0, min(25.0, 0.45 * fs)], btype="band", fs=fs, output="sos")
+        qrs = sosfiltfilt(sos, filt)
+        beat_t = refine_peaks(qrs, peaks, fs) / fs if len(peaks) else np.zeros(0)
     rr = np.diff(beat_t)
     abnormal = flag_abnormal(rr, spec.rr_jump) if len(rr) else np.zeros(0, bool)
 
@@ -115,7 +123,7 @@ def extract_rr(rec: Recording, spec: TeacherSpec) -> RRSeries:
     duration = n / fs
     S = int(round(spec.stride_sec * fs))
     n_blocks = n // S
-    block_ok = np.array([window_quality(raw[None, b * S:(b + 1) * S], ins, ("ecg",)) for b in range(n_blocks)],
+    block_ok = np.array([window_quality(raw[None, b * S:(b + 1) * S], ins, (channel,)) for b in range(n_blocks)],
                         dtype=bool)
 
     n_sec = int(np.ceil(duration))
@@ -126,6 +134,7 @@ def extract_rr(rec: Recording, spec: TeacherSpec) -> RRSeries:
     else:
         labels = np.full(n_sec, -1, np.int64)
     meta = {k: v for k, v in rec.meta.items() if k != "path"}
+    meta["rr_channel"] = channel
     return RRSeries(rec.dataset_id, rec.subject_id, rec.session_id, rec.group, rec.t0, duration,
                     beat_t, rr, abnormal, block_ok, labels, rec.is_rest, meta)
 

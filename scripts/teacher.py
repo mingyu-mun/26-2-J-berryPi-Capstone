@@ -86,12 +86,17 @@ def cmd_inspect(a, cfg):
                     print(f"  열기 실패: {e}")
 
 
-def _rr_one(d: str, out: str, spec: TeacherSpec, overwrite: bool) -> str:
-    rec = load_session(d, channels=("ecg",))
+def _rr_one(d: str, out: str, spec: TeacherSpec, overwrite: bool, channel: str = "ecg") -> str:
+    try:
+        rec = load_session(d, channels=(channel,))
+    except Exception as e:  # PPG 없는 세션
+        return f"skip {d} ({type(e).__name__})"
+    if channel not in rec.signals:
+        return f"skip {d} (no {channel})"
     path = cache_path(out, rec)
     if path.exists() and not overwrite:
         return f"skip {path}"
-    extract_rr(rec, spec).save(path)
+    extract_rr(rec, spec, channel).save(path)
     return f"ok   {path}"
 
 
@@ -101,10 +106,10 @@ def cmd_rr(a, cfg):
     print(f"세션 {len(dirs)}개 → {a.out}")
     t = time.perf_counter()
     if a.jobs == 1:
-        msgs = [_rr_one(d, a.out, spec, a.overwrite) for d in dirs]
+        msgs = [_rr_one(d, a.out, spec, a.overwrite, a.channel) for d in dirs]
     else:
         from joblib import Parallel, delayed
-        msgs = Parallel(n_jobs=a.jobs, verbose=5)(delayed(_rr_one)(d, a.out, spec, a.overwrite) for d in dirs)
+        msgs = Parallel(n_jobs=a.jobs, verbose=5)(delayed(_rr_one)(d, a.out, spec, a.overwrite, a.channel) for d in dirs)
     print(f"{sum(m.startswith('ok') for m in msgs)}개 처리, {sum(m.startswith('skip') for m in msgs)}개 건너뜀, "
           f"{time.perf_counter() - t:.0f}s")
 
@@ -425,6 +430,7 @@ def main() -> None:
     p.add_argument("--minutes", type=float, default=30.0); p.add_argument("--seed", type=int, default=0)
     p = sp.add_parser("inspect"); p.add_argument("--src", required=True)
     p = sp.add_parser("rr"); p.add_argument("--data", nargs="+", required=True); p.add_argument("--out", required=True)
+    p.add_argument("--channel", choices=["ecg", "ppg"], default="ecg", help="ppg: 맥박 간격 (PRV)")
     p.add_argument("--jobs", type=int, default=1); p.add_argument("--overwrite", action="store_true")
     p = sp.add_parser("features"); p.add_argument("--rr", required=True); p.add_argument("--out", required=True)
     p.add_argument("--jobs", type=int, default=1); p.add_argument("--no-tacho", action="store_true")
