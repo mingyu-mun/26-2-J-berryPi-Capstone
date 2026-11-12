@@ -45,6 +45,11 @@ def load_all(cache: str, student: str, data_root: str | None, tbin_sec: float = 
     ast = annotate(ws, ps, info, data_root, tbin_sec)
     at["src"], ast["src"] = "teacher", "student"
     ann = pd.concat([at, ast], ignore_index=True)
+    if nw_dir:                                   # 3장: NW 표현과 NW 기준 벡터가 있는 창만 (학습·평가 모두)
+        has_ref = ann["profile_key"].map(prof.set_index("profile_key")["m_nw_00"].dropna()).notna()
+        keep = np.isfinite(ann["nw_00"].to_numpy(float)) & has_ref.to_numpy()
+        print(f"NormWear 창 {int(keep.sum())} / {len(ann)}", flush=True)
+        ann = ann[keep].reset_index(drop=True)
     return ann, prof, wt, pt, ws, ps
 
 
