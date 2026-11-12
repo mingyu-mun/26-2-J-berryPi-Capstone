@@ -96,7 +96,7 @@ def main():
     (out / "report_normwear.json").write_text(json.dumps(rep, ensure_ascii=False, indent=1, default=float), encoding="utf-8")
 
     L = ["# NormWear 교체 실험 결과", "", f"평가 창 {len(oof)}, WESAD 창 {len(wes)}", "",
-         "| 조건 | M1 | " + " | ".join(sorted(rep["M1_ds"]["B0"])) + " | S1 | S2 |", "|" + " --- |" * (5 + len(rep["M1_ds"]["B0"]))]
+         "| 조건 | M1 | " + " | ".join(sorted(rep["M1_ds"]["B0"])) + " | S1 | S2 |", "|" + " --- |" * (4 + len(rep["M1_ds"]["B0"]))]
     for c in conds:
         ds = " | ".join(f"{rep['M1_ds'][c][k]:.3f}" for k in sorted(rep["M1_ds"][c]))
         s1 = f"{rep['S1'][c]:.3f}" if c in rep["S1"] else "-"
