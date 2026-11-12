@@ -54,6 +54,8 @@ def main():
     ap = argparse.ArgumentParser()
     for k in ("session", "out", "cache", "student", "nw-dir", "normwear-dir", "ckpt", "f2c-params", "f2c-oof", "student-dir"):
         ap.add_argument(f"--{k}", required=True)
+    ap.add_argument("--max-abn", dest="max_abn", type=float)
+    ap.add_argument("--baseline-auto", dest="baseline_auto", action="store_true")
     a = ap.parse_args()
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
     spec = TeacherSpec()
@@ -63,6 +65,18 @@ def main():
     # 1. RR 특징·기준 구간 (교사 파이프라인 그대로)
     rec = load_session(a.session, channels=("ecg", "ppg"))
     rr = extract_rr(rec, spec, "ecg")
+    if a.max_abn is not None:                      # 창 유효 조건 강화 (기본 0.10)
+        import dataclasses
+        spec = dataclasses.replace(spec, max_abnormal_ratio=a.max_abn)
+    if a.baseline_auto:                            # 이상 간격 비율이 가장 낮은 5분을 기준으로 (시작 60~600초)
+        best = None
+        for st in np.arange(60.0, min(600.0, rr.duration - spec.baseline_sec) + 1e-6, 30.0):
+            m = (rr.rr_t >= st) & (rr.rr_t < st + spec.baseline_sec)
+            r_ = float(rr.abnormal[m].mean()) if m.any() else 1.0
+            if best is None or r_ < best[1]:
+                best = (float(st), r_)
+        rr.meta["baseline_range"] = [best[0], best[0] + spec.baseline_sec]
+        print(f"자동 기준 구간 {best[0]:.0f}~{best[0] + spec.baseline_sec:.0f}s (이상 간격 {best[1]:.3f})", flush=True)
     win, prof = build_tables([rr], spec)
     plan = baseline_plan([rr], spec)
     info = next(v for v in plan.values() if v is not None)
