@@ -91,6 +91,8 @@ def main():
     zn = z_of(wt_nw, win, prof)
     Z = np.concatenate([zr, zn], 1)
     params = dict(np.load(a.f2c_params))
+    np.savez(out / "inputs.npz", Z=Z, t_rel=win["t_rel"].to_numpy(float), valid=win["valid"].to_numpy(bool),
+             names=np.array(names + NW_COLS), raw=win[names].to_numpy(float), ref=prof[[f"m_{n}" for n in names]].to_numpy(float))
     t_logit = teacher_logits(params, Z)
 
     # 교사 동작점 (LODO oof, 데이터셋별 졸음 창 가중 중앙값 평균 = 민감도 50%)
