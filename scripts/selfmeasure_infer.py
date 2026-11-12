@@ -56,6 +56,7 @@ def main():
         ap.add_argument(f"--{k}", required=True)
     ap.add_argument("--max-abn", dest="max_abn", type=float)
     ap.add_argument("--baseline-auto", dest="baseline_auto", action="store_true")
+    ap.add_argument("--rr-gate", dest="rr_gate", action="store_true", help="부록 A RR 품질 가중")
     a = ap.parse_args()
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
     spec = TeacherSpec()
@@ -90,6 +91,10 @@ def main():
     fit_rows = usable(wt) & wt["profile_key"].isin(okp).to_numpy()
     norm = PersonalNormalizer(spec).fit(wt[fit_rows])
     zr, dev_core = z_matrix(norm, win, prof, names)
+    from window_quality import abn_ratio, rr_weight
+    q = abn_ratio(rr, win["t_rel"].to_numpy(float))
+    if a.rr_gate:                                  # 부록 A: RR z × w(q)
+        zr = (zr * rr_weight(q)[:, None]).astype(np.float32)
     comps, _ = fit_pca(ws, Path(a.nw_dir))
     wt_nw, _ = attach(wt[fit_rows].reset_index(drop=True), pt, a.nw_dir, comps)
 
@@ -129,6 +134,7 @@ def main():
     res = win[["t_rel", "valid"]].copy()
     res["hr_30"] = win["hr_30"].to_numpy() if "hr_30" in win else np.nan
     res["dev_core"] = dev_core
+    res["q_abn"] = q
     res["teacher_logit"] = t_logit
     res["teacher_p"] = 1 / (1 + np.exp(-t_logit))
     res["teacher_alarm"] = t_logit >= th_t

@@ -66,6 +66,7 @@ def main():
     ap.add_argument("--steps", type=int, default=None)
     ap.add_argument("--n-boot", type=int, default=2000)
     ap.add_argument("--final", action="store_true", help="전체 데이터로 최종 학생 저장")
+    ap.add_argument("--quality", help="부록 A: window_quality.py 결과 (있으면 _q 평가 추가)")
     ap.add_argument("--scores", help="--final: LODO student_scores.parquet (동작점 계산)")
     a = ap.parse_args()
     import torch
@@ -85,7 +86,11 @@ def main():
     ref_index = pd.read_parquet(W / "ref_index.parquet")
     pz, has_prv = prv_z(lab, a.cache, a.prv, spec, names)
     print(f"적재 {time.time() - t0:.0f}s, PRV 유효 (학생 데이터) {has_prv[lab['dataset_id'].isin(['clas', 'maus', 'wesad'])].mean():.3f}", flush=True)
-    D = Data(lab, index, wave, ref_index, ref_wave, pz, names, params)
+    w_rr = None
+    if a.quality:
+        qq = lab[["row_id", "dataset_id"]].merge(pd.read_parquet(a.quality), on=["row_id", "dataset_id"], how="left")
+        w_rr = qq["w_rr"].fillna(0.0).to_numpy(np.float32)
+    D = Data(lab, index, wave, ref_index, ref_wave, pz, names, params, w_rr)
     hp = {"steps": a.steps} if a.steps else None
     if a.final:                                    # 최종 학생 저장 (기기·실측 추론용)
         for cond in a.conds:
@@ -143,7 +148,7 @@ def main():
     t = res[res["dataset_id"].isin(TEACHER_DATASETS) & (res["y"] >= 0)]
     t = t.merge(s0, on=["row_id", "dataset_id"]).merge(f2c, on=["row_id", "dataset_id"])
     t["fold"] = t["dataset_id"]
-    ecg_cols = [c for c in ("S0", "F2C", "s_S1-E", "s_S1-EP", "s_S2-E") if c in t.columns]
+    ecg_cols = [c for c in ("S0", "F2C", "s_S1-E", "s_S1-EP", "s_S2-E", "s_S1-EP_q", "s_S1-E_q") if c in t.columns]
     t = t[np.isfinite(t[ecg_cols].to_numpy(float)).all(1)].reset_index(drop=True)
     rep = {"n_teacher_rows": int(len(t)), "M1": {}, "M1_ds": {}, "diff": {}, "S1": {}, "S2": {}, "agree": {}, "params": {}}
     for c in ecg_cols:
@@ -157,6 +162,11 @@ def main():
                 d = B[:, ecg_cols.index(c)] - B[:, ecg_cols.index(ref)]
                 rep["diff"][f"{c}-{ref}"] = {"diff": rep["M1"][c] - rep["M1"][ref],
                                              "lo": float(np.nanpercentile(d, 2.5)), "hi": float(np.nanpercentile(d, 97.5))}
+    for c in ("s_S1-EP", "s_S1-E"):
+        if f"{c}_q" in ecg_cols:
+            d = B[:, ecg_cols.index(f"{c}_q")] - B[:, ecg_cols.index(c)]
+            rep["diff"][f"{c}_q-{c}"] = {"diff": rep["M1"][f"{c}_q"] - rep["M1"][c],
+                                          "lo": float(np.nanpercentile(d, 2.5)), "hi": float(np.nanpercentile(d, 97.5))}
     wes = res[(res["dataset_id"] == "wesad") & res["cond"].isin(["stress", "other"])].copy()
     wes["fold"] = [TEACHER_DATASETS[g] for g in wes["gfold"]]
     for c in [x for x in res.columns if x.startswith("s_S")]:

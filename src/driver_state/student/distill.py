@@ -92,13 +92,14 @@ def fold_logits(params: dict, tag: str, Z: np.ndarray) -> np.ndarray:
 
 
 class Data:
-    def __init__(self, lab, index, wave, ref_index, ref_wave, prv_z: np.ndarray | None, rr_names, params):
+    def __init__(self, lab, index, wave, ref_index, ref_wave, prv_z: np.ndarray | None, rr_names, params, w_rr=None):
         self.lab, self.wave, self.ref_wave = lab, wave, ref_wave
         self.pk = index["profile_key"].to_numpy()
         self.has = index[["has_ecg", "has_ppg"]].to_numpy(bool)
         self.zr = lab[[f"zr_{n}" for n in rr_names]].to_numpy(np.float32)
         self.zn = lab[[c for c in lab.columns if c.startswith("zn_")]].to_numpy(np.float32)
         self.prv = prv_z
+        self.w_rr = w_rr                                  # 부록 A: 창 품질 가중 (평가 전용)
         self.params = params
         self.ds = lab["dataset_id"].to_numpy()
         self.is_student = np.isin(self.ds, STUDENT_SETS)
@@ -235,8 +236,13 @@ def train_eval(D: Data, cond: str, fold: int, seed: int, device: str, log=print,
     modes = {"": None}
     if cond == "S1-EP":
         modes = {"": None, "_ecg": 0, "_ppg": 1}               # 한 채널만 넣은 평가
+    if D.w_rr is not None and rr is not None:
+        modes["_q"] = "q"                                       # 부록 A: RR z × w(q)
     with torch.no_grad():
         for suf, only in modes.items():
+            qmode = only == "q"
+            if qmode:
+                only = None
             rows_all = np.flatnonzero(ev)
             if only == 1:
                 rows_all = rows_all[D.has[rows_all, 1]]
@@ -263,7 +269,8 @@ def train_eval(D: Data, cond: str, fold: int, seed: int, device: str, log=print,
                     x = x * M[:, :, None]
                 gx = m.g(x.to(device))
                 gr = torch.stack([gref[k] for k in D.pk[rows]])
-                zr_ = torch.as_tensor(rr[rows]).to(device) if rr is not None else None
+                zr_np = rr[rows] * (D.w_rr[rows, None] if qmode else 1.0) if rr is not None else None
+                zr_ = torch.as_tensor(np.asarray(zr_np, np.float32)).to(device) if rr is not None else None
                 res[rows] = m.logit(zr_, gx - gr).cpu().numpy()
             out[f"s_{cond}{suf}"] = res
     out["target"] = np.where(ev, target, np.nan).astype(np.float32)
