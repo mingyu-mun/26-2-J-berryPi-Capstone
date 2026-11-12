@@ -57,12 +57,16 @@ def stress_rate(t_oof, wes, col, cond):
 
 def main():
     ap = argparse.ArgumentParser()
-    for k in ("label-dir", "wave", "cache", "prv", "s0-oof", "f2c-oof", "out"):
+    for k in ("label-dir", "wave", "cache", "prv", "out"):
         ap.add_argument(f"--{k}", required=True)
+    for k in ("s0-oof", "f2c-oof"):
+        ap.add_argument(f"--{k}")
     ap.add_argument("--conds", nargs="+", default=list(CONDS))
     ap.add_argument("--seeds", nargs="+", type=int, default=[0, 1, 2])
     ap.add_argument("--steps", type=int, default=None)
     ap.add_argument("--n-boot", type=int, default=2000)
+    ap.add_argument("--final", action="store_true", help="전체 데이터로 최종 학생 저장")
+    ap.add_argument("--scores", help="--final: LODO student_scores.parquet (동작점 계산)")
     a = ap.parse_args()
     import torch
     dev = "cuda" if torch.cuda.is_available() else "cpu"
@@ -83,6 +87,26 @@ def main():
     print(f"적재 {time.time() - t0:.0f}s, PRV 유효 (학생 데이터) {has_prv[lab['dataset_id'].isin(['clas', 'maus', 'wesad'])].mean():.3f}", flush=True)
     D = Data(lab, index, wave, ref_index, ref_wave, pz, names, params)
     hp = {"steps": a.steps} if a.steps else None
+    if a.final:                                    # 최종 학생 저장 (기기·실측 추론용)
+        for cond in a.conds:
+            for seed in a.seeds:
+                _, m = train_eval(D, cond, -1, seed, dev, hp=hp)
+                torch.save({k: v.cpu() for k, v in m.state_dict().items()}, out / f"{cond}_s{seed}.pt")
+        # 동작점: LODO 학생 점수의 데이터셋별 졸음 창 가중 중앙값 평균 (민감도 50%)
+        sc = pd.read_parquet(a.scores) if a.scores else None
+        if sc is not None:
+            th = {}
+            for cond in a.conds:
+                c = f"s_{cond}"
+                if c not in sc:
+                    continue
+                vals = []
+                for ds_, g in sc[sc["dataset_id"].isin(TEACHER_DATASETS) & (sc["y"] == 1) & np.isfinite(sc[c])].groupby("dataset_id"):
+                    wts = 1.0 / g.groupby("group")["group"].transform("size").to_numpy(float)
+                    vals.append(weighted_median(g[c].to_numpy(float), wts))
+                th[cond] = float(np.mean(vals))
+            (out / "thresholds.json").write_text(json.dumps(th, indent=1), encoding="utf-8")
+        return
 
     res_p = out / "student_scores.parquet"
     if res_p.exists():

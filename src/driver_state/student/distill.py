@@ -137,8 +137,9 @@ def train_eval(D: Data, cond: str, fold: int, seed: int, device: str, log=print,
     hp = {**HP, **(hp or {})}
     cfg = CONDS[cond]
     chs = [CH[c] for c in cfg["ch"]]
-    test = TEACHER_DATASETS[fold]
-    target = D.target(fold)
+    final = fold < 0                                          # 최종 학생: 전체 데이터, 교사 "final"
+    test = None if final else TEACHER_DATASETS[fold]
+    target = D.lab["logit"].to_numpy(np.float32).copy() if final else D.target(fold)
     need = _need(cfg, cfg["ch"])
     has_any = np.zeros(len(D.lab), bool)
     for c in cfg["ch"]:
@@ -154,12 +155,15 @@ def train_eval(D: Data, cond: str, fold: int, seed: int, device: str, log=print,
     elif cfg["rr"] == "prv":
         rr = D.prv
     usable = has_any & has_ref & np.isfinite(target)
-    tr = usable & (D.ds != test) & ~(D.is_student & (D.gfold == fold))
-    ev = usable & ((D.ds == test) | (D.is_student & (D.gfold == fold)))
+    if final:
+        tr, ev = usable.copy(), np.zeros(len(usable), bool)
+    else:
+        tr = usable & (D.ds != test) & ~(D.is_student & (D.gfold == fold))
+        ev = usable & ((D.ds == test) | (D.is_student & (D.gfold == fold)))
     torch.manual_seed(seed)
     rng = np.random.default_rng(seed + 101)
     pr = D.params
-    tag = f"lodo_{test}/s0"
+    tag = "final/s0" if final else f"lodo_{test}/s0"
     d_rr = 0 if rr is None else rr.shape[1]
     W = pr[f"{tag}/W"]
     m = Student(len(chs), cfg["head"], W, float(pr[f"{tag}/alpha"]), float(pr[f"{tag}/b"]), d_rr).to(device)
@@ -223,6 +227,9 @@ def train_eval(D: Data, cond: str, fold: int, seed: int, device: str, log=print,
             log(f"      {cond} f{fold} s{seed} step {step} loss {float(loss):.4f} score {float(l_score):.4f}")
     m.eval()
 
+    if final:
+        log(f"    {cond} 최종 seed {seed}: 학습 {len(idx)} 창 ({time.perf_counter() - t0:.0f}s)")
+        return {}, m
     # 평가: 기준 = 기준 창 g 의 중앙값 (전부)
     out = {}
     modes = {"": None}
