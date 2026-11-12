@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from driver_state.teacher.anomaly import bootstrap_stress, stress_rates  # noqa: E402
-from driver_state.teacher.metrics_time import bootstrap_diff, per_dataset  # noqa: E402
+from driver_state.teacher.metrics_time import bootstrap_m1, per_dataset  # noqa: E402
 
 KEY = ["row_id", "fold"]
 
@@ -71,8 +71,12 @@ def main():
         rep["S1"][c] = stress_rates(oof, wes, c)
         rep["S2"][c] = stress_rates(oof, wes, c, cond="other")
     pairs = [("P1N", "P1"), ("F2N", "F2"), ("P1C", "P1"), ("F2C", "F2")]
+    bcols = sorted({c for p in pairs for c in p})
+    B = bootstrap_m1(oof, bcols, n_boot=a.n_boot)          # 같은 재표본에서 모든 조건 (쌍체)
     for x, y in pairs:
-        rep["diff"][f"{x}-{y}"] = bootstrap_diff(oof, x, y, "M1", n_boot=a.n_boot)
+        d = B[:, bcols.index(x)] - B[:, bcols.index(y)]
+        rep["diff"][f"{x}-{y}"] = {"diff": rep["M1"][x] - rep["M1"][y],
+                                   "lo": float(np.nanpercentile(d, 2.5)), "hi": float(np.nanpercentile(d, 97.5))}
     best = max(rep["M1"]["B0"], rep["M1"]["B1"])
     cands = []
     for c in ["P0N", "P1N", "P2N", "P1C", "F2N", "F2C"]:
