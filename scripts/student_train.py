@@ -136,7 +136,7 @@ def main():
     wes = res[(res["dataset_id"] == "wesad") & res["cond"].isin(["stress", "other"])].copy()
     wes["fold"] = [TEACHER_DATASETS[g] for g in wes["gfold"]]
     for c in [x for x in res.columns if x.startswith("s_S")]:
-        base = c if c in t.columns else ("s_S1-EP" if c.startswith("s_S1-EP") else None)
+        base = c if c in ecg_cols else ("s_S1-EP" if c.startswith("s_S1-EP") else None)
         if base is None:
             continue
         tt = t.rename(columns={base: "_th"})
