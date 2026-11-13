@@ -177,12 +177,50 @@ def main():
             res[f"{col}_p"] = 1 / (1 + np.exp(-res[f"{col}_logit"]))
             if cond in th_s:
                 res[f"{col}_alarm"] = res[f"{col}_logit"] >= th_s[cond]
+    # 5. PPG 대체 경로 (상태 머신 v2 3장): PRV RR 특징 + PPG 파형만
+    prrs = [extract_rr(rc, spec, "ppg") for rc in recs]
+    if "baseline_range" in rr.meta:
+        prrs[0].meta["baseline_range"] = rr.meta["baseline_range"]
+    prrs[0].t0 = rr.t0
+    pwin, pprof = build_tables(prrs, spec)
+    pz, _ = z_matrix(norm, pwin, pprof, names)
+    k = ["session_id", "t_rel"]
+    pdf = pd.concat([pwin[k + ["hr_30", "valid"]].rename(columns={"hr_30": "hr_ppg", "valid": "valid_ppg"}),
+                     pd.DataFrame(pz, columns=[f"pz{i}" for i in range(pz.shape[1])])], axis=1)
+    mm = win[k].merge(pdf, on=k, how="left")
+    zr_prv = np.nan_to_num(mm[[f"pz{i}" for i in range(pz.shape[1])]].to_numpy(np.float32), nan=0.0)
+    pby = {r_.session_id: r_ for r_ in prrs}
+    q_ppg = np.ones(len(win))
+    for sid, g in win.groupby("session_id"):
+        q_ppg[g.index.to_numpy()] = abn_ratio(pby[sid], g["t_rel"].to_numpy(float))
+    res["hr_ecg"] = win["hr_30"].to_numpy()
+    res["hr_ppg"] = mm["hr_ppg"].to_numpy()
+    res["q_ppg"] = q_ppg
+    res["valid_ppg"] = mm["valid_ppg"].fillna(False).to_numpy(bool)
+    L = []
+    for p_ in sorted(sd.glob("S1-EP_s*.pt")):
+        sdict = torch.load(p_, map_location="cpu", weights_only=True)
+        m = Student(2, "dist", sdict["W"].numpy(), 0.0, 0.0, 36).to(dev)
+        m.load_state_dict(sdict); m.eval()
+        with torch.no_grad():
+            M = torch.tensor([0.0, 1.0])
+            x = torch.as_tensor(X) * M[None, :, None]; r = torch.as_tensor(R) * M[None, :, None]
+            gr = m.g(r.to(dev)).median(0).values
+            L.append(m.logit(torch.as_tensor(zr_prv).to(dev), m.g(x.to(dev)) - gr).cpu().numpy())
+    if L:
+        res["student_S1-EP_prv_logit"] = np.mean(L, 0)
+        res["student_S1-EP_prv_p"] = 1 / (1 + np.exp(-res["student_S1-EP_prv_logit"]))
     res.to_csv(out / "windows_scores.csv", index=False)
+    # 상태 머신 v2 2장 기준 수집 점검 (첫 세션, 10초 격자)
+    from driver_state.state_machine_v2 import select_baseline
+    grid = np.arange(0.0, rr.duration - 30 + 1e-6, 10.0)
+    okb, idxb, (ba, bb) = select_baseline(grid, abn_ratio(rr, grid))
+    base_check = {"ok": bool(okb), "clean_windows": int(len(idxb)), "range": [float(ba), float(bb)]}
     v = res[res["valid"]]
     summ = {"n_windows": int(len(res)), "n_valid": int(len(v)), "baseline": [info.session_id, float(info.start), float(info.end)],
             "per_session": {sid: {c: float(g[c].mean()) for c in g.columns if c.endswith("_alarm")} | {"n_valid": int(len(g))}
                             for sid, g in v.groupby("session_id")},
-            "teacher_threshold": th_t, "student_thresholds": th_s,
+            "teacher_threshold": th_t, "student_thresholds": th_s, "baseline_check_v2": base_check,
             "alarm_rate": {c: float(v[c].mean()) for c in v.columns if c.endswith("_alarm")},
             "p_median": {c: float(v[c].median()) for c in v.columns if c.endswith("_p")}}
     (out / "summary.json").write_text(json.dumps(summ, ensure_ascii=False, indent=1), encoding="utf-8")
