@@ -4,7 +4,33 @@
 
 ECG·PPG 생체신호를 중심으로 차량 CAN 데이터를 보조 정보로 활용하여, 운전 중 운전자의 특이사항과 상태 변화를 Raspberry Pi 내부에서 판단하는 캡스톤디자인 프로젝트입니다. 카메라 없이 생체센서 기반으로 개발합니다.
 
-> 현재 단계: 공개 데이터 기반 모델 골조와 센서 수집 환경 준비. 후보 모델 5종(MLP, CNN+BiLSTM, Random Forest, XGBoost, LightGBM)과 공통 입력 규약(개인 Baseline 포함)을 구현했으며, 현재는 합성 데이터로만 동작을 확인한 상태입니다. 시연 모델은 생체 단독(CAN 후순위)이며, 분류기는 정상/졸음 2클래스, 최종 표시는 상태 머신의 정상/주의/졸음 3단계입니다(11/5 확정). 공개 데이터셋 로더와 졸음 정답 기준은 아직 없습니다.
+> **현재 단계 (2026-11-13, 중간 산출물 확정):** 공개 졸음 데이터로 학습한 **교사 F2C** → 교사 라벨로 증류한 **학생 S1-EP (PPG+ECG, 약 5만 파라미터)** → 잡음 오경보를 억제하는 **상태 머신 v2** 까지 한 번 이어 붙였고, 직접 측정한 센서 데이터(AD8232 ECG + MAX30102 PPG) 2회로 추론을 확인했습니다. 요약은 [중간 산출물](docs/MILESTONE-2026-11-13.md)에 있습니다.
+
+## 현재 구조와 성능
+
+```text
+공개 졸음 데이터 (AdVitam, DD-DB, DROZY, MPD-DF: ECG + 졸음 라벨)
+ └─ 교사 F2C: 개인 기준 대비 편차 z = [RR 특징 36 ; NormWear 표현 32] → ‖W z‖ (W 8×68)
+      · 방향 없는 거리 + 스트레스(WESAD TSST) 음성 학습
+ └─ 라벨링: 교사 데이터는 LODO, 학생 데이터(CLAS·MAUS·WESAD)는 최종 교사로 확률 라벨
+      └─ 학생 S1-EP: 30초 ECG·PPG 파형 → 1D CNN 인코더 (NormWear 특징 증류) + ECG RR 특징 → 교사 W
+           └─ 상태 머신 v2: 기준 수집 품질 조건 → 창 신뢰도 → 3창 중앙값 → 잡음 동결
+                → 정상 / 주의 / 졸음 (졸음 확정은 CAN 교차 확인 또는 추가 3분 지속)
+```
+
+| 단계 | 주 지표 (공개 데이터 LODO) | 결과 | 문서 |
+| --- | --- | --- | --- |
+| 교사 F2C | 졸음 M1 (시간 층화 AUROC) / 스트레스 오경보 S1 | 0.641 / 0.410 | [teacher-normwear-stage1](docs/teacher-normwear-stage1.md) |
+| 학생 S1-EP | M1 / S1 / 교사 일치 ρ (CLAS·MAUS·WESAD) | 0.668 / 0.149 / 0.68·0.83·0.81 | [student-f2c-stage1](docs/student-f2c-stage1.md) |
+| 비교: 학습 없는 규칙 (기준선 이탈) | M1 / S1 | 0.637 / 0.787 | |
+| 상태 머신 v2 | 정상 구간 시간당 오경보 (v0.3 → v2) / 실측 잡음 이식 시 증가 | 2.82 → 1.38 / +0.02 | [state-machine-v2](docs/state-machine-v2.md) |
+
+- 학생은 같은 졸음 감지력에서 스트레스 오경보를 규칙 대비 약 1/5 로 줄였습니다 (S1 차이 −0.64, 95% 구간 [−0.82, −0.47]).
+- 한계:
+  - EEG 로 정의한 졸음(MPD-DF)은 M1 약 0.49 로 여전히 어렵습니다. 심박 방향이 다른 데이터셋과 반대이기 때문입니다.
+  - 실측 ECG 잡음이 크면(이상 간격 15%) 정상 상태에서도 경보가 늘어납니다. 상태 머신 v2 는 이런 녹음에서 기준 수집 단계에서 재측정을 안내합니다.
+  - 대화·흥분 같은 상황은 아직 직접 검증하지 않았습니다.
+- 실험 기록과 미채택 안(쌍 학습, RR 인코더 거리, RR 품질 가중 등)은 `docs/results/` 에 날짜별로 있습니다.
 
 ## 프로젝트 개요
 
@@ -81,7 +107,7 @@ ECG / PPG + 차량 CAN (실시간 또는 파일 Replay)
     → 상태 표시 및 알림 / 개인화 서비스 연계
 ```
 
-첫 단계에서는 공개 데이터로 생체 입력의 모델 골조를 검증하고, 실제 센서 데이터·개인화·CAN 입력은 확보 상태에 따라 단계적으로 결합합니다. 세부 모델 구조와 개인화 결합 방식은 아직 선정하지 않았습니다.
+개인화는 "운전 시작 5분 기준 구간 대비 편차" 로 모든 단계(교사·학생·상태 머신)에 들어가 있습니다. CAN 은 학습 모델이 아니라 규칙 기반 교차 확인으로 졸음 확정 단계에 붙일 예정입니다 (규격 작성 전).
 
 ## 팀 및 역할
 
@@ -123,47 +149,43 @@ ECG / PPG + 차량 CAN (실시간 또는 파일 Replay)
 
 - [x] 기업 전달자료 검토 및 CAN 로그 형식 1차 확인
 - [x] 부품 구매 목록 정리
-- [ ] 부품 주문 및 수령
-- [ ] 공개 데이터셋과 라벨 기준 선정
-- [ ] 전처리–ML 입력·출력 명세 합의 (초안: docs/input-spec.md)
-- [ ] 작은 CNN 학습·평가 프로토타입 (후보 5종 골조 구현, 공개 데이터 적용 전)
-- [ ] 실제 센서 데이터 비교 검증
-- [ ] 개인화 및 Pi 통합 Demo
+- [x] 센서 수령 및 직접 측정 2회 (AD8232 ECG + MAX30102 PPG, 각 30분)
+- [x] 공개 데이터셋과 라벨 기준 선정 (교사 4종, 학생용 3종, 어댑터 8종)
+- [x] 전처리–ML 입력·출력 명세 ([input-spec](docs/input-spec.md), [data-handoff](docs/data-handoff.md))
+- [x] 교사 모델 확정 (F2C)
+- [x] 학생 모델 증류 및 평가 (S1-EP)
+- [x] 상태 머신 v2 구현·평가
+- [ ] CAN 교차 확인 규칙
+- [ ] 대화·흥분 상황 직접 측정 검증
+- [ ] ONNX/int8 내보내기, Pi 추론시간·메모리 측정
+- [ ] Pi 통합 Demo 와 HMI
 
 ## 저장소 구성
 
 ```text
 .
 ├── README.md
-├── CONTRIBUTING.md
-├── .gitignore
-├── .github/pull_request_template.md
-├── requirements.txt
-├── configs/default.yaml          # 입력 규약 기본값 + 모델 하이퍼파라미터
+├── configs/                      # 입력 규약·모델·교사 설정
 ├── src/driver_state/
-│   ├── spec.py                   # 채널·전처리·윈도우·특징·Baseline·라벨 규약
-│   ├── preprocessing.py          # 노치·anti-aliasing·리샘플·대역통과·품질 검사
-│   ├── data.py                   # Recording → 전처리 → 윈도우
-│   ├── data_io.py                # 데이터 팀 전달 폴더 → Recording
-│   ├── features.py               # HRV·PPG 특징 추출
-│   ├── baseline.py               # 개인 Baseline 프로필·개인화 특징
-│   ├── normalization.py          # 정규화 파이프라인 (JSON 저장)
-│   ├── inference.py              # 시연 추론 (프로필 + Replay)
-│   ├── state_machine.py          # 윈도우 판정(-1) + 정상/주의/졸음 상태 머신
-│   ├── evaluate.py               # LOSO 비교 평가
-│   ├── synthetic.py              # 동작 확인용 합성 데이터
-│   └── models/                   # 후보 모델 5종
-├── scripts/run_benchmark.py      # LOSO 비교 (--compare-personal)
-├── scripts/demo_pipeline.py      # 시연 흐름 리허설
+│   ├── adapters/                 # 공개 데이터셋 → 표준 폴더 (8종)
+│   ├── teacher/                  # 교사: RR 추출, 특징, 개인 기준, 평가 지표, F2C, NormWear 특징, 라벨링
+│   ├── student/distill.py        # 학생 S1-EP 등 증류 학습·평가
+│   ├── state_machine.py          # 상태 머신 v0.3 (시연 설정)
+│   ├── state_machine_v2.py       # 상태 머신 v2 (잡음 오경보 억제)
+│   ├── preprocessing.py, features.py, data_io.py, ...   # 공통 입력 규약
+│   └── models/                   # 초기 후보 모델 5종
+├── scripts/
+│   ├── convert.py                # 공개 데이터 변환
+│   ├── teacher.py                # rr / features / anomaly-eval / f2c-label 등
+│   ├── normwear_embed.py         # NormWear 표현 추출 (GPU)
+│   ├── student_cache.py, student_train.py      # 학생 입력 캐시·학습·평가 (GPU)
+│   ├── selfmeasure_infer.py      # 실측 세션 교사·학생 추론
+│   └── sm_v2_eval.py             # 상태 머신 v2 평가
 ├── tests/
 └── docs/
-    ├── project-plan.md
-    ├── context-notes.md
-    ├── data-and-model.md
-    ├── input-spec.md             # 공통 입력 규약
-    ├── data-handoff.md           # 데이터 팀 전달 규약
-    ├── state-machine.md          # 추론 후단 상태 머신
-    └── models.md                 # 후보 모델 설명
+    ├── MILESTONE-2026-11-13.md   # 중간 산출물 요약
+    ├── teacher*.md, student-f2c-stage1.md, state-machine*.md   # 단계별 규격 (결과 보기 전 판정 기준 고정)
+    └── results/                  # 날짜별 결과
 ```
 
 ## 시작하기
@@ -183,10 +205,24 @@ python scripts/run_benchmark.py --synthetic --compare-personal   # 5개 모델 L
 python scripts/demo_pipeline.py                 # 30초 calibration → 프로필 → Replay 추론 → 상태 머신
 ```
 
-결과는 `outputs/benchmark/`(Git 제외)에 저장됩니다. 입력 형식은 [공통 입력 규약](docs/input-spec.md), 모델 설명은 [후보 모델](docs/models.md), 졸음 라벨을 만드는 교사 모델은 [교사 모델](docs/teacher.md)을 참고하세요. 보드 런타임과 설치 방법은 보드가 정해지면 추가합니다. 협업 방법은 [협업 가이드](CONTRIBUTING.md)를 참고하세요.
+결과는 `outputs/benchmark/`(Git 제외)에 저장됩니다. 입력 형식은 [공통 입력 규약](docs/input-spec.md)을 참고하세요. 협업 방법은 [협업 가이드](CONTRIBUTING.md)에 있습니다.
+
+교사·학생 파이프라인은 GPU 서버에서 아래 순서로 실행합니다. 경로는 예시입니다.
+
+```sh
+python scripts/convert.py ...                                   # 공개 데이터 → 표준 폴더
+python scripts/teacher.py rr / features ...                      # RR·특징 캐시 (학생 데이터는 rr --channel ppg 로 PRV 도)
+python scripts/normwear_embed.py --ckpt <model.safetensors> ...  # NormWear 표현
+python scripts/teacher.py anomaly-eval --features rrnw --conds F2 ...   # 교사 F2C LODO
+python scripts/teacher.py f2c-label ...                          # 라벨 표·교사 파라미터
+python scripts/student_cache.py ... && python scripts/student_train.py ...          # 학생 LODO
+python scripts/student_train.py --final ...                      # 최종 학생 저장
+python scripts/selfmeasure_infer.py --session <실측 세션> ...    # 실측 추론
+python scripts/sm_v2_eval.py ...                                 # 상태 머신 v2 평가
+```
 
 ## 데이터 및 라이선스
 
-원본 생체데이터, 운전자 프로필, 비밀번호와 API 키는 저장소에 올리지 않습니다. 기업 제공 자료와 공개 데이터셋의 이용·배포 조건을 확인하고, 필요한 데이터는 별도 경로에서 관리합니다.
+원본 생체데이터(공개 데이터와 직접 측정 데이터 모두), 운전자 프로필, 비밀번호와 API 키는 저장소에 올리지 않습니다. WESAD 는 비상업 조건이라 이를 쓴 학생 모델도 비상업 용도로만 씁니다. NormWear 가중치는 safetensors 형식만 사용합니다. 기업 제공 자료와 공개 데이터셋의 이용·배포 조건을 확인하고, 필요한 데이터는 별도 경로에서 관리합니다.
 
 프로젝트 코드의 라이선스는 아직 정하지 않았습니다.
