@@ -20,7 +20,7 @@ class V2Config:
     dt: float = 10.0                 # 판정 간격 [s]
     th_on: float = 0.55
     th_off: float = 0.40
-    t_up1: float = 60.0              # 정상 → 주의
+    t_up1: float = 40.0              # 정상 → 주의 (2026-11-13: 60 → 40초)
     t_up2: float = 60.0              # 주의 → 졸음 후보
     t_down: float = 60.0             # 한 단계 하강
     t_hold: float = 60.0             # -1 연속 → 측정 불가
