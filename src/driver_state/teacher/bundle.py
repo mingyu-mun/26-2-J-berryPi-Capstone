@@ -68,7 +68,8 @@ def fit_final(win: pd.DataFrame, prof: pd.DataFrame, spec: TeacherSpec, model_na
     y = W["y"].to_numpy(np.int64)
     rng = np.random.default_rng(seed)
     tr, va = split_val(W, np.arange(len(W)), 0.1, rng)      # early stopping 용 10%
-    norm = PersonalNormalizer(spec).fit(W.iloc[tr])
+    norm = PersonalNormalizer(spec).fit(W.iloc[tr], prof)
+    mspc_fit = norm.mspc
     force = rng.random(len(tr)) < spec.train_invalid_rate
     sl = (lambda a, i: None if a is None else a[i])
     Xtr = make_input(W.iloc[tr], prof, spec, norm, sl(TA, tr), force)
@@ -94,6 +95,7 @@ def fit_final(win: pd.DataFrame, prof: pd.DataFrame, spec: TeacherSpec, model_na
     else:
         model = one(model_name)
     norm = PersonalNormalizer(spec).fit(W)   # 라벨링 때 쓰는 σ_pop 은 전체 참가자로
+    norm.mspc = mspc_fit                     # MSPC 는 모델이 학습한 것과 같은 PCA 를 써야 함
     info = {"model": model_name, "version": spec.version, "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "n_windows": int(len(W)), "n_subjects": int(W["group"].nunique()),
             "datasets": {d: int(n) for d, n in W["dataset_id"].value_counts().items()},

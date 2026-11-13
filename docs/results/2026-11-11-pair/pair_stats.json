@@ -1,0 +1,128 @@
+{
+  "pair_stats": {
+    "advitam": {
+      "R_subjects": 15,
+      "R_tm_subjects": 11,
+      "T_subjects": 49,
+      "S_subjects": 0,
+      "valid_labeled_windows": 5365
+    },
+    "clas": {
+      "R_subjects": 0,
+      "R_tm_subjects": 0,
+      "T_subjects": 0,
+      "S_subjects": 36,
+      "valid_labeled_windows": 0
+    },
+    "dddb": {
+      "R_subjects": 10,
+      "R_tm_subjects": 0,
+      "T_subjects": 10,
+      "S_subjects": 0,
+      "valid_labeled_windows": 7594
+    },
+    "drozy": {
+      "R_subjects": 9,
+      "R_tm_subjects": 9,
+      "T_subjects": 12,
+      "S_subjects": 0,
+      "valid_labeled_windows": 1072
+    },
+    "maus": {
+      "R_subjects": 0,
+      "R_tm_subjects": 0,
+      "T_subjects": 0,
+      "S_subjects": 21,
+      "valid_labeled_windows": 0
+    },
+    "mpddf": {
+      "R_subjects": 38,
+      "R_tm_subjects": 0,
+      "T_subjects": 50,
+      "S_subjects": 0,
+      "valid_labeled_windows": 26110
+    }
+  },
+  "clas_stimulus_patterns": {
+    "all.png": 27,
+    "begin.png": 60,
+    "#.png": 4438,
+    "#.#.png": 1180,
+    "#.#.#.png": 1184,
+    "mathtestanswer.png": 59,
+    "n#.jpg": 361,
+    "strooptestanswer.png": 60,
+    "iqtestanswer.png": 60,
+    "neutral.mp#": 60,
+    "#.mp#": 960,
+    "neutral#.mp#": 180,
+    "#.jpg": 959,
+    "end.jpg": 60,
+    "#_#.png": 519,
+    "#_#_#.png": 519,
+    "#r.png": 2737,
+    "#a.png": 2744
+  },
+  "clas_task_intervals": {
+    "Math Test": 59,
+    "Stroop Test": 60,
+    "Logic(IQ) Test": 60
+  },
+  "cond_windows": {
+    "clas/mixed": 897,
+    "clas/other": 9137,
+    "clas/task": 3305,
+    "maus/task": 3668,
+    "wesad/mixed": 79,
+    "wesad/other": 5973,
+    "wesad/stress": 987
+  },
+  "advitam_kss0_ge7": 10,
+  "drozy_base_kss_ge7": 0,
+  "drozy_base_not_test1": [
+    "D07:test2",
+    "D09:test2"
+  ],
+  "base_kind": [
+    {
+      "dataset_id": "advitam",
+      "base_kind": "rest_session",
+      "subjects": 63
+    },
+    {
+      "dataset_id": "clas",
+      "base_kind": "range",
+      "subjects": 60
+    },
+    {
+      "dataset_id": "dddb",
+      "base_kind": "default",
+      "subjects": 10
+    },
+    {
+      "dataset_id": "drozy",
+      "base_kind": "default",
+      "subjects": 14
+    },
+    {
+      "dataset_id": "maus",
+      "base_kind": "default",
+      "subjects": 1
+    },
+    {
+      "dataset_id": "maus",
+      "base_kind": "rest_session",
+      "subjects": 21
+    },
+    {
+      "dataset_id": "mpddf",
+      "base_kind": "default",
+      "subjects": 50
+    },
+    {
+      "dataset_id": "wesad",
+      "base_kind": "range",
+      "subjects": 15
+    }
+  ]
+}

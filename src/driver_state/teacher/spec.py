@@ -93,7 +93,7 @@ class LabelRule:
     kss_drowsy_min: float = 7.0          # KSS >= 7 → 1
     kss_alert_max: float = 5.0           # KSS <= 5 → 0, 사이(6)는 -1
     fatigue_alert: tuple[int, ...] = (0,)        # MPD-DF 피로 단계
-    fatigue_drowsy: tuple[int, ...] = (3, 4)
+    fatigue_drowsy: tuple[int, ...] = (2, 3, 4)  # 2 = drowsy, 3·4 = 수면 (MPD-DF 논문 정의)
     event_drowsy_sec: float = 60.0       # DD-Database: 이벤트 ±60초 = 졸음
     event_alert_gap_sec: float = 600.0   # 이벤트에서 10분 이상 떨어진 구간 = 정상
     extra: dict = field(default_factory=dict)

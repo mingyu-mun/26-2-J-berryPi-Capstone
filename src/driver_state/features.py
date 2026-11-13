@@ -35,6 +35,23 @@ def detect_ppg_peaks(ppg: np.ndarray, fs: float) -> np.ndarray:
     return peaks
 
 
+def detect_ppg_peaks_adaptive(ppg: np.ndarray, fs: float) -> np.ndarray:
+    """맥파 peak (PRV 용): 0.5–8 Hz → 10초 조각 스펙트럼 최고 (0.7–3 Hz) 의 중앙값으로 맥박 주기 추정
+    → 최소 간격 0.6 × 주기. 이중 맥(중복파) 을 막는다."""
+    from scipy.signal import welch
+    f = _bandpass(ppg, fs, 0.5, 8.0)
+    n = int(10 * fs)
+    fr_peaks = []
+    for i in range(0, len(f) - n, n):
+        fr, P = welch(f[i:i + n], fs, nperseg=n)
+        m = (fr > 0.7) & (fr < 3.0)
+        if m.any():
+            fr_peaks.append(fr[m][np.argmax(P[m])])
+    per = 1.0 / np.median(fr_peaks) if fr_peaks else 0.6
+    peaks, _ = find_peaks(f, distance=max(1, int(0.6 * per * fs)), prominence=0.3 * np.std(f))
+    return peaks
+
+
 def _ibi_stats(peaks: np.ndarray, fs: float) -> tuple[float, float, float, float, float]:
     """박동 간격(ms) 통계: (rate_bpm, mean_ms, sdnn_ms, rmssd_ms, pnn50)."""
     ibi = np.diff(peaks) / fs

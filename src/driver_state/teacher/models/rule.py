@@ -2,7 +2,7 @@
 
 점수 = −z(HR, 2분) + z(RMSSD, 2분). 졸음일수록 심박이 내려가고 부교감(RMSSD)이 오른다는 문헌상 경향을
 부호만 고정해 쓴다. 개인 기준이 없으면 학습셋 평균·표준편차로 표준화한 값을 쓴다.
-학습하는 것은 점수 → 확률 변환의 기울기·절편 2개뿐 (AUROC 에는 영향 없음).
+학습하는 것은 점수 → 확률 변환의 기울기·절편 2개뿐. 기울기는 양수로 고정해 AUROC 가 규칙 방향 그대로 나오게 한다.
 """
 from __future__ import annotations
 
@@ -42,6 +42,10 @@ class RuleTeacher(TeacherModel):
         s = self._score(X)[:, None]
         lr = LogisticRegression(C=1.0).fit(s, y, sample_weight=w)
         self.a, self.b = float(lr.coef_[0, 0]), float(lr.intercept_[0])
+        if self.a <= 0:
+            # 학습셋에서 방향이 반대로 나와도 규칙의 부호(심박↓·RMSSD↑ = 졸음)는 지킨다.
+            # 기울기가 음수면 순위가 뒤집혀 기준선이 0.5 아래로 떨어진다 (2026-11-09 실데이터 LODO).
+            self.a = 1e-3
         return self
 
     def predict_logit(self, X):

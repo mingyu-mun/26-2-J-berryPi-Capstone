@@ -1,0 +1,231 @@
+"""실측 세션 (규약 폴더) 하나에 교사 F2C 와 최종 학생을 돌린다. GPU 서버에서 실행.
+
+    python scripts/selfmeasure_infer.py --session <규약 세션 폴더> --out out/selfmeasure \
+        --cache data/teacher_cache --student data/cache_student --nw-dir out/normwear \
+        --normwear-dir ~/jberry --ckpt ~/jberry/normwear_ckpt/model.safetensors \
+        --f2c-params out/f2c_label/f2c_params.npz --f2c-oof out/anomaly_c/oof_lodo.parquet \
+        --student-dir out/student_final
+
+결과: <out>/windows_scores.csv (창별 HR, 교사·학생 logit·확률·경보), <out>/summary.json
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import warnings
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import torch
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "scripts"))
+warnings.filterwarnings("ignore")
+
+from driver_state.data_io import load_session  # noqa: E402
+from driver_state.student.distill import CONDS, CH, Student  # noqa: E402
+from driver_state.teacher.anomaly import z_matrix  # noqa: E402
+from driver_state.teacher.evaluate import usable  # noqa: E402
+from driver_state.teacher.features import baseline_plan, build_tables  # noqa: E402
+from driver_state.teacher.metrics_time import weighted_median  # noqa: E402
+from driver_state.teacher.nw_features import NW_COLS, attach, fit_pca, z_of  # noqa: E402
+from driver_state.teacher.pairs import TEACHER_DATASETS  # noqa: E402
+from driver_state.teacher.personal import PersonalNormalizer  # noqa: E402
+from driver_state.teacher.rr import extract_rr  # noqa: E402
+from driver_state.teacher.spec import TeacherSpec  # noqa: E402
+from normwear_embed import Embedder, prep_ecg, segments  # noqa: E402
+from student_cache import cut, prep  # noqa: E402
+
+
+def teacher_logits(params, Z):
+    out, i = [], 0
+    while f"final/s{i}/W" in params:
+        W, a, b = params[f"final/s{i}/W"], float(params[f"final/s{i}/alpha"]), float(params[f"final/s{i}/b"])
+        s = np.sqrt(((Z @ W.T) ** 2).sum(1) + 1e-8) - 1e-4
+        out.append(np.log1p(np.exp(a)) * s + b)
+        i += 1
+    return np.mean(out, 0)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--session", nargs="+", required=True, help="같은 사람의 세션들. 첫 세션이 기준 구간을 준다")
+    for k in ("out", "cache", "student", "nw-dir", "normwear-dir", "ckpt", "f2c-params", "f2c-oof", "student-dir"):
+        ap.add_argument(f"--{k}", required=True)
+    ap.add_argument("--max-abn", dest="max_abn", type=float)
+    ap.add_argument("--baseline-auto", dest="baseline_auto", action="store_true")
+    ap.add_argument("--rr-gate", dest="rr_gate", action="store_true", help="부록 A RR 품질 가중")
+    a = ap.parse_args()
+    out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
+    spec = TeacherSpec()
+    names = list(spec.baseline_feature_names)
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # 1. RR 특징·기준 구간 (교사 파이프라인 그대로)
+    recs = [load_session(d, channels=("ecg", "ppg")) for d in a.session]
+    rrs = [extract_rr(r_, spec, "ecg") for r_ in recs]
+    rr = rrs[0]                                     # 기준 구간을 주는 세션
+    base_t0 = min(r_.t0 for r_ in rrs)
+    rr.t0 = min(rr.t0, base_t0 - 1.0)               # baseline_plan 이 첫 세션을 기준으로 고르게
+    if a.max_abn is not None:                      # 창 유효 조건 강화 (기본 0.10)
+        import dataclasses
+        spec = dataclasses.replace(spec, max_abnormal_ratio=a.max_abn)
+    if a.baseline_auto:                            # 이상 간격 비율이 가장 낮은 5분을 기준으로 (시작 60~600초)
+        best = None
+        for st in np.arange(60.0, min(600.0, rr.duration - spec.baseline_sec) + 1e-6, 30.0):
+            m = (rr.rr_t >= st) & (rr.rr_t < st + spec.baseline_sec)
+            r_ = float(rr.abnormal[m].mean()) if m.any() else 1.0
+            if best is None or r_ < best[1]:
+                best = (float(st), r_)
+        rr.meta["baseline_range"] = [best[0], best[0] + spec.baseline_sec]
+        print(f"자동 기준 구간 {best[0]:.0f}~{best[0] + spec.baseline_sec:.0f}s (이상 간격 {best[1]:.3f})", flush=True)
+    win, prof = build_tables(rrs, spec)
+    plan = baseline_plan(rrs, spec)
+    info = next(v for v in plan.values() if v is not None)
+    key = f"{rr.dataset_id}/{rr.group}#{info.session_id}"
+    print(f"창 {len(win)} (유효 {int(win['valid'].sum())}), 기준 {info.start:.0f}~{info.end:.0f}s, 기준 유효 {prof['baseline_valid'].tolist()}", flush=True)
+
+    # 2. 교사 정규화 (교사 4종 유효 창) + NormWear PCA (CLAS·MAUS)
+    wt, pt = pd.read_parquet(Path(a.cache) / "windows.parquet"), pd.read_parquet(Path(a.cache) / "profiles.parquet")
+    ws = pd.read_parquet(Path(a.student) / "windows.parquet")
+    okp = set(pt.loc[pt["baseline_valid"] > 0.5, "profile_key"])
+    fit_rows = usable(wt) & wt["profile_key"].isin(okp).to_numpy()
+    norm = PersonalNormalizer(spec).fit(wt[fit_rows])
+    zr, dev_core = z_matrix(norm, win, prof, names)
+    from window_quality import abn_ratio, rr_weight
+    by_ses = {r_.session_id: (r_, rc) for r_, rc in zip(rrs, recs)}
+    q = np.zeros(len(win))
+    for sid, g in win.groupby("session_id"):
+        q[g.index.to_numpy()] = abn_ratio(by_ses[sid][0], g["t_rel"].to_numpy(float))
+    if a.rr_gate:                                  # 부록 A: RR z × w(q)
+        zr = (zr * rr_weight(q)[:, None]).astype(np.float32)
+    comps, _ = fit_pca(ws, Path(a.nw_dir))
+    wt_nw, _ = attach(wt[fit_rows].reset_index(drop=True), pt, a.nw_dir, comps)
+
+    # 3. NormWear 임베딩 (창 + 기준 창)
+    emb = Embedder(a.normwear_dir, a.ckpt, dev)
+    E = np.zeros((len(win), len(NW_COLS)), np.float32)
+    for sid, g in win.groupby("session_id"):
+        rc = by_ses[sid][1]
+        sg = prep_ecg(rc.signals["ecg"], rc.fs["ecg"])
+        E[g.index.to_numpy()] = emb(segments(sg, g["t_rel"].to_numpy(float))).astype(np.float32) @ comps.T
+    rec0 = by_ses[info.session_id][1]
+    sig = prep_ecg(rec0.signals["ecg"], rec0.fs["ecg"])
+    starts = np.arange(info.start, info.end - 30 + 1e-6, spec.stride_sec)
+    Er = emb(segments(sig, starts)).astype(np.float32) @ comps.T
+    for i, c in enumerate(NW_COLS):
+        win[c] = E[:, i]
+        prof[f"m_{c}"] = np.median(Er[:, i])
+    zn = z_of(wt_nw, win, prof)
+    Z = np.concatenate([zr, zn], 1)
+    params = dict(np.load(a.f2c_params))
+    np.savez(out / "inputs.npz", Z=Z, t_rel=win["t_rel"].to_numpy(float), valid=win["valid"].to_numpy(bool),
+             names=np.array(names + NW_COLS), raw=win[names].to_numpy(float), ref=prof[[f"m_{n}" for n in names]].to_numpy(float))
+    t_logit = teacher_logits(params, Z)
+
+    # 교사 동작점 (LODO oof, 데이터셋별 졸음 창 가중 중앙값 평균 = 민감도 50%)
+    oof = pd.read_parquet(a.f2c_oof)
+    th_t = []
+    for _, g in oof[(oof["y"] == 1) & np.isfinite(oof["s_F2"])].groupby("dataset_id"):
+        wts = 1.0 / g.groupby("group")["group"].transform("size").to_numpy(float)
+        th_t.append(weighted_median(g["s_F2"].to_numpy(float), wts))
+    th_t = float(np.mean(th_t))
+
+    # 4. 학생 (64 Hz 파형)
+    sd = Path(a.student_dir)
+    th_s = json.loads((sd / "thresholds.json").read_text()) if (sd / "thresholds.json").exists() else {}
+    rs = starts[:30]
+    X = np.zeros((len(win), 2, 1920), np.float32); R = np.zeros((len(rs), 2, 1920), np.float32)
+    for sid, g in win.groupby("session_id"):
+        rc = by_ses[sid][1]
+        for c, ch in enumerate(("ecg", "ppg")):
+            X[g.index.to_numpy(), c] = cut(prep(rc.signals[ch], rc.fs[ch], ch), g["t_rel"].to_numpy(float))[0]
+    for c, ch in enumerate(("ecg", "ppg")):
+        R[:, c] = cut(prep(rec0.signals[ch], rec0.fs[ch], ch), rs)[0]
+    res = win[["session_id", "t_rel", "valid"]].copy()
+    res["hr_30"] = win["hr_30"].to_numpy() if "hr_30" in win else np.nan
+    res["dev_core"] = dev_core
+    res["q_abn"] = q
+    res["teacher_logit"] = t_logit
+    res["teacher_p"] = 1 / (1 + np.exp(-t_logit))
+    res["teacher_alarm"] = t_logit >= th_t
+    for cond, modes in (("S1-EP", {"": None, "_ecg": 0, "_ppg": 1}), ("S1-E", {"": None})):
+        cfg = CONDS[cond]
+        chs = [CH[c] for c in cfg["ch"]]
+        seeds = sorted(sd.glob(f"{cond}_s*.pt"))
+        if not seeds:
+            continue
+        for suf, only in modes.items():
+            L = []
+            for p in seeds:
+                sdict = torch.load(p, map_location="cpu", weights_only=True)
+                m = Student(len(chs), cfg["head"], sdict["W"].numpy(), 0.0, 0.0, 36).to(dev)
+                m.load_state_dict(sdict); m.eval()
+                with torch.no_grad():
+                    x = torch.as_tensor(X[:, chs]); r = torch.as_tensor(R[:, chs])
+                    if len(chs) == 2:
+                        M = torch.tensor([0.0 if only == 1 else 1.0, 0.0 if only == 0 else 1.0])
+                        x = x * M[None, :, None]; r = r * M[None, :, None]
+                    gr = m.g(r.to(dev)).median(0).values
+                    lg = m.logit(torch.as_tensor(zr).to(dev), m.g(x.to(dev)) - gr)
+                L.append(lg.cpu().numpy())
+            col = f"student_{cond}{suf}"
+            res[f"{col}_logit"] = np.mean(L, 0)
+            res[f"{col}_p"] = 1 / (1 + np.exp(-res[f"{col}_logit"]))
+            if cond in th_s:
+                res[f"{col}_alarm"] = res[f"{col}_logit"] >= th_s[cond]
+    # 5. PPG 대체 경로 (상태 머신 v2 3장): PRV RR 특징 + PPG 파형만
+    prrs = [extract_rr(rc, spec, "ppg") for rc in recs]
+    if "baseline_range" in rr.meta:
+        prrs[0].meta["baseline_range"] = rr.meta["baseline_range"]
+    prrs[0].t0 = rr.t0
+    pwin, pprof = build_tables(prrs, spec)
+    pz, _ = z_matrix(norm, pwin, pprof, names)
+    k = ["session_id", "t_rel"]
+    pdf = pd.concat([pwin[k + ["hr_30", "valid"]].rename(columns={"hr_30": "hr_ppg", "valid": "valid_ppg"}),
+                     pd.DataFrame(pz, columns=[f"pz{i}" for i in range(pz.shape[1])])], axis=1)
+    mm = win[k].merge(pdf, on=k, how="left")
+    zr_prv = np.nan_to_num(mm[[f"pz{i}" for i in range(pz.shape[1])]].to_numpy(np.float32), nan=0.0)
+    pby = {r_.session_id: r_ for r_ in prrs}
+    q_ppg = np.ones(len(win))
+    for sid, g in win.groupby("session_id"):
+        q_ppg[g.index.to_numpy()] = abn_ratio(pby[sid], g["t_rel"].to_numpy(float))
+    res["hr_ecg"] = win["hr_30"].to_numpy()
+    res["hr_ppg"] = mm["hr_ppg"].to_numpy()
+    res["q_ppg"] = q_ppg
+    res["valid_ppg"] = mm["valid_ppg"].fillna(False).to_numpy(bool)
+    L = []
+    for p_ in sorted(sd.glob("S1-EP_s*.pt")):
+        sdict = torch.load(p_, map_location="cpu", weights_only=True)
+        m = Student(2, "dist", sdict["W"].numpy(), 0.0, 0.0, 36).to(dev)
+        m.load_state_dict(sdict); m.eval()
+        with torch.no_grad():
+            M = torch.tensor([0.0, 1.0])
+            x = torch.as_tensor(X) * M[None, :, None]; r = torch.as_tensor(R) * M[None, :, None]
+            gr = m.g(r.to(dev)).median(0).values
+            L.append(m.logit(torch.as_tensor(zr_prv).to(dev), m.g(x.to(dev)) - gr).cpu().numpy())
+    if L:
+        res["student_S1-EP_prv_logit"] = np.mean(L, 0)
+        res["student_S1-EP_prv_p"] = 1 / (1 + np.exp(-res["student_S1-EP_prv_logit"]))
+    res.to_csv(out / "windows_scores.csv", index=False)
+    # 상태 머신 v2 2장 기준 수집 점검 (첫 세션, 10초 격자)
+    from driver_state.state_machine_v2 import select_baseline
+    grid = np.arange(0.0, rr.duration - 30 + 1e-6, 10.0)
+    okb, idxb, (ba, bb) = select_baseline(grid, abn_ratio(rr, grid))
+    base_check = {"ok": bool(okb), "clean_windows": int(len(idxb)), "range": [float(ba), float(bb)]}
+    v = res[res["valid"]]
+    summ = {"n_windows": int(len(res)), "n_valid": int(len(v)), "baseline": [info.session_id, float(info.start), float(info.end)],
+            "per_session": {sid: {c: float(g[c].mean()) for c in g.columns if c.endswith("_alarm")} | {"n_valid": int(len(g))}
+                            for sid, g in v.groupby("session_id")},
+            "teacher_threshold": th_t, "student_thresholds": th_s, "baseline_check_v2": base_check,
+            "alarm_rate": {c: float(v[c].mean()) for c in v.columns if c.endswith("_alarm")},
+            "p_median": {c: float(v[c].median()) for c in v.columns if c.endswith("_p")}}
+    (out / "summary.json").write_text(json.dumps(summ, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(json.dumps(summ, ensure_ascii=False, indent=1), flush=True)
+
+
+if __name__ == "__main__":
+    main()

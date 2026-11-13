@@ -1,0 +1,201 @@
+{
+ "public": {
+  "advitam": {
+   "v0.3": {
+    "fa_per_h": 5.429864253393666,
+    "alert_h": 9.21,
+    "episodes": 87,
+    "miss_rate": 0.39080459770114945,
+    "lat_warn_median_s": 0.0,
+    "lat_drowsy_median_s": 20.0,
+    "warn_time_frac_alert": 0.2150504904309323
+   },
+   "v2": {
+    "fa_per_h": 2.9321266968325794,
+    "alert_h": 9.21,
+    "episodes": 87,
+    "miss_rate": 0.5517241379310345,
+    "lat_warn_median_s": 30.0,
+    "lat_drowsy_median_s": 0.0,
+    "warn_time_frac_alert": 0.22303803546476025
+   }
+  },
+  "dddb": {
+   "v0.3": {
+    "fa_per_h": 2.6970684039087947,
+    "alert_h": 8.53,
+    "episodes": 206,
+    "miss_rate": 0.5728155339805825,
+    "lat_warn_median_s": 0.0,
+    "lat_drowsy_median_s": 0.0,
+    "warn_time_frac_alert": 0.060532738123361324
+   },
+   "v2": {
+    "fa_per_h": 1.4071661237785016,
+    "alert_h": 8.53,
+    "episodes": 206,
+    "miss_rate": 0.6019417475728155,
+    "lat_warn_median_s": 0.0,
+    "lat_drowsy_median_s": 0.0,
+    "warn_time_frac_alert": 0.09632750824855431
+   }
+  },
+  "drozy": {
+   "v0.3": {
+    "fa_per_h": 3.4615384615384612,
+    "alert_h": 0.87,
+    "episodes": 18,
+    "miss_rate": 0.0,
+    "lat_warn_median_s": 0.0,
+    "lat_drowsy_median_s": 10.0,
+    "warn_time_frac_alert": 0.17694805194805197
+   },
+   "v2": {
+    "fa_per_h": 2.3076923076923075,
+    "alert_h": 0.87,
+    "episodes": 18,
+    "miss_rate": 0.1111111111111111,
+    "lat_warn_median_s": 30.0,
+    "lat_drowsy_median_s": 90.0,
+    "warn_time_frac_alert": 0.1461038961038961
+   }
+  },
+  "mpddf": {
+   "v0.3": {
+    "fa_per_h": 2.4732028307743246,
+    "alert_h": 67.12,
+    "episodes": 80,
+    "miss_rate": 0.65,
+    "lat_warn_median_s": 0.0,
+    "lat_drowsy_median_s": 0.0,
+    "warn_time_frac_alert": 0.14093559905718075
+   },
+   "v2": {
+    "fa_per_h": 1.1472085419856806,
+    "alert_h": 67.12,
+    "episodes": 80,
+    "miss_rate": 0.675,
+    "lat_warn_median_s": 0.0,
+    "lat_drowsy_median_s": 0.0,
+    "warn_time_frac_alert": 0.13187065647380314
+   }
+  }
+ },
+ "public_all": {
+  "v0.3": {
+   "fa_per_h": 2.823071937783539,
+   "alert_h": 85.72,
+   "episodes": 391,
+   "miss_rate": 0.5217391304347826,
+   "lat_warn_median_s": 0.0,
+   "lat_drowsy_median_s": 0.0,
+   "warn_time_frac_alert": 0.17224562959853348
+  },
+  "v2": {
+   "fa_per_h": 1.3765392093324693,
+   "alert_h": 85.72,
+   "episodes": 391,
+   "miss_rate": 0.5831202046035806,
+   "lat_warn_median_s": 0.0,
+   "lat_drowsy_median_s": 0.0,
+   "warn_time_frac_alert": 0.17516908632244033
+  }
+ },
+ "wesad": {
+  "v0.3": {
+   "fa_per_h": 6.14550095724314,
+   "alert_h": 17.41,
+   "episodes": 0,
+   "miss_rate": 0.0,
+   "lat_warn_median_s": NaN,
+   "lat_drowsy_median_s": NaN,
+   "warn_time_frac_alert": 0.30320614284214314
+  },
+  "v2": {
+   "fa_per_h": 3.503509891512444,
+   "alert_h": 17.41,
+   "episodes": 0,
+   "miss_rate": 0.0,
+   "lat_warn_median_s": NaN,
+   "lat_drowsy_median_s": NaN,
+   "warn_time_frac_alert": 0.302656400998974
+  }
+ },
+ "rec1": {
+  "v0.3": {
+   "fa_per_h": 14.794520547945206,
+   "alert_h": 0.2,
+   "episodes": 0,
+   "miss_rate": 0.0,
+   "lat_warn_median_s": NaN,
+   "lat_drowsy_median_s": NaN,
+   "warn_time_frac_alert": 0.4246575342465753
+  },
+  "v2": {
+   "fa_per_h": 9.863013698630137,
+   "alert_h": 0.2,
+   "episodes": 0,
+   "miss_rate": 0.0,
+   "lat_warn_median_s": NaN,
+   "lat_drowsy_median_s": NaN,
+   "warn_time_frac_alert": 0.0958904109589041
+  },
+  "baseline_check_v2": {
+   "ok": false,
+   "clean_windows": 5,
+   "range": [
+    60.0,
+    600.0
+   ]
+  }
+ },
+ "rec2": {
+  "v0.3": {
+   "fa_per_h": 9.642857142857142,
+   "alert_h": 0.31,
+   "episodes": 0,
+   "miss_rate": 0.0,
+   "lat_warn_median_s": NaN,
+   "lat_drowsy_median_s": NaN,
+   "warn_time_frac_alert": 0.23214285714285715
+  },
+  "v2": {
+   "fa_per_h": 6.428571428571429,
+   "alert_h": 0.31,
+   "episodes": 0,
+   "miss_rate": 0.0,
+   "lat_warn_median_s": NaN,
+   "lat_drowsy_median_s": NaN,
+   "warn_time_frac_alert": 0.1875
+  },
+  "baseline_check_v2": {
+   "ok": true,
+   "clean_windows": 25,
+   "range": [
+    60.0,
+    360.0
+   ]
+  }
+ },
+ "inject_public_alert": {
+  "v0.3": {
+   "fa_per_h": 3.534672715489307,
+   "alert_h": 85.72,
+   "episodes": 391,
+   "miss_rate": 0.5217391304347826,
+   "lat_warn_median_s": 0.0,
+   "lat_drowsy_median_s": 0.0,
+   "warn_time_frac_alert": 0.22772257572279592
+  },
+  "v2": {
+   "fa_per_h": 1.3998703823720027,
+   "alert_h": 85.72,
+   "episodes": 391,
+   "miss_rate": 0.5831202046035806,
+   "lat_warn_median_s": 0.0,
+   "lat_drowsy_median_s": 0.0,
+   "warn_time_frac_alert": 0.18323409109050315
+  }
+ },
+ "n_noise_blocks": 24
+}
