@@ -52,7 +52,8 @@ def teacher_logits(params, Z):
 
 def main():
     ap = argparse.ArgumentParser()
-    for k in ("session", "out", "cache", "student", "nw-dir", "normwear-dir", "ckpt", "f2c-params", "f2c-oof", "student-dir"):
+    ap.add_argument("--session", nargs="+", required=True, help="같은 사람의 세션들. 첫 세션이 기준 구간을 준다")
+    for k in ("out", "cache", "student", "nw-dir", "normwear-dir", "ckpt", "f2c-params", "f2c-oof", "student-dir"):
         ap.add_argument(f"--{k}", required=True)
     ap.add_argument("--max-abn", dest="max_abn", type=float)
     ap.add_argument("--baseline-auto", dest="baseline_auto", action="store_true")
@@ -64,8 +65,11 @@ def main():
     dev = "cuda" if torch.cuda.is_available() else "cpu"
 
     # 1. RR 특징·기준 구간 (교사 파이프라인 그대로)
-    rec = load_session(a.session, channels=("ecg", "ppg"))
-    rr = extract_rr(rec, spec, "ecg")
+    recs = [load_session(d, channels=("ecg", "ppg")) for d in a.session]
+    rrs = [extract_rr(r_, spec, "ecg") for r_ in recs]
+    rr = rrs[0]                                     # 기준 구간을 주는 세션
+    base_t0 = min(r_.t0 for r_ in rrs)
+    rr.t0 = min(rr.t0, base_t0 - 1.0)               # baseline_plan 이 첫 세션을 기준으로 고르게
     if a.max_abn is not None:                      # 창 유효 조건 강화 (기본 0.10)
         import dataclasses
         spec = dataclasses.replace(spec, max_abnormal_ratio=a.max_abn)
@@ -78,8 +82,8 @@ def main():
                 best = (float(st), r_)
         rr.meta["baseline_range"] = [best[0], best[0] + spec.baseline_sec]
         print(f"자동 기준 구간 {best[0]:.0f}~{best[0] + spec.baseline_sec:.0f}s (이상 간격 {best[1]:.3f})", flush=True)
-    win, prof = build_tables([rr], spec)
-    plan = baseline_plan([rr], spec)
+    win, prof = build_tables(rrs, spec)
+    plan = baseline_plan(rrs, spec)
     info = next(v for v in plan.values() if v is not None)
     key = f"{rr.dataset_id}/{rr.group}#{info.session_id}"
     print(f"창 {len(win)} (유효 {int(win['valid'].sum())}), 기준 {info.start:.0f}~{info.end:.0f}s, 기준 유효 {prof['baseline_valid'].tolist()}", flush=True)
@@ -92,7 +96,10 @@ def main():
     norm = PersonalNormalizer(spec).fit(wt[fit_rows])
     zr, dev_core = z_matrix(norm, win, prof, names)
     from window_quality import abn_ratio, rr_weight
-    q = abn_ratio(rr, win["t_rel"].to_numpy(float))
+    by_ses = {r_.session_id: (r_, rc) for r_, rc in zip(rrs, recs)}
+    q = np.zeros(len(win))
+    for sid, g in win.groupby("session_id"):
+        q[g.index.to_numpy()] = abn_ratio(by_ses[sid][0], g["t_rel"].to_numpy(float))
     if a.rr_gate:                                  # 부록 A: RR z × w(q)
         zr = (zr * rr_weight(q)[:, None]).astype(np.float32)
     comps, _ = fit_pca(ws, Path(a.nw_dir))
@@ -100,8 +107,13 @@ def main():
 
     # 3. NormWear 임베딩 (창 + 기준 창)
     emb = Embedder(a.normwear_dir, a.ckpt, dev)
-    sig = prep_ecg(rec.signals["ecg"], rec.fs["ecg"])
-    E = emb(segments(sig, win["t_rel"].to_numpy(float))).astype(np.float32) @ comps.T
+    E = np.zeros((len(win), len(NW_COLS)), np.float32)
+    for sid, g in win.groupby("session_id"):
+        rc = by_ses[sid][1]
+        sg = prep_ecg(rc.signals["ecg"], rc.fs["ecg"])
+        E[g.index.to_numpy()] = emb(segments(sg, g["t_rel"].to_numpy(float))).astype(np.float32) @ comps.T
+    rec0 = by_ses[info.session_id][1]
+    sig = prep_ecg(rec0.signals["ecg"], rec0.fs["ecg"])
     starts = np.arange(info.start, info.end - 30 + 1e-6, spec.stride_sec)
     Er = emb(segments(sig, starts)).astype(np.float32) @ comps.T
     for i, c in enumerate(NW_COLS):
@@ -125,13 +137,15 @@ def main():
     # 4. 학생 (64 Hz 파형)
     sd = Path(a.student_dir)
     th_s = json.loads((sd / "thresholds.json").read_text()) if (sd / "thresholds.json").exists() else {}
-    wav = {ch: prep(rec.signals[ch], rec.fs[ch], ch) for ch in ("ecg", "ppg")}
     rs = starts[:30]
     X = np.zeros((len(win), 2, 1920), np.float32); R = np.zeros((len(rs), 2, 1920), np.float32)
+    for sid, g in win.groupby("session_id"):
+        rc = by_ses[sid][1]
+        for c, ch in enumerate(("ecg", "ppg")):
+            X[g.index.to_numpy(), c] = cut(prep(rc.signals[ch], rc.fs[ch], ch), g["t_rel"].to_numpy(float))[0]
     for c, ch in enumerate(("ecg", "ppg")):
-        X[:, c] = cut(wav[ch], win["t_rel"].to_numpy(float))[0]
-        R[:, c] = cut(wav[ch], rs)[0]
-    res = win[["t_rel", "valid"]].copy()
+        R[:, c] = cut(prep(rec0.signals[ch], rec0.fs[ch], ch), rs)[0]
+    res = win[["session_id", "t_rel", "valid"]].copy()
     res["hr_30"] = win["hr_30"].to_numpy() if "hr_30" in win else np.nan
     res["dev_core"] = dev_core
     res["q_abn"] = q
@@ -165,7 +179,9 @@ def main():
                 res[f"{col}_alarm"] = res[f"{col}_logit"] >= th_s[cond]
     res.to_csv(out / "windows_scores.csv", index=False)
     v = res[res["valid"]]
-    summ = {"n_windows": int(len(res)), "n_valid": int(len(v)), "baseline": [float(info.start), float(info.end)],
+    summ = {"n_windows": int(len(res)), "n_valid": int(len(v)), "baseline": [info.session_id, float(info.start), float(info.end)],
+            "per_session": {sid: {c: float(g[c].mean()) for c in g.columns if c.endswith("_alarm")} | {"n_valid": int(len(g))}
+                            for sid, g in v.groupby("session_id")},
             "teacher_threshold": th_t, "student_thresholds": th_s,
             "alarm_rate": {c: float(v[c].mean()) for c in v.columns if c.endswith("_alarm")},
             "p_median": {c: float(v[c].median()) for c in v.columns if c.endswith("_p")}}
