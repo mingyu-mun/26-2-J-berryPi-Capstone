@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.2",
+  "type": "system.status",
+  "session_id": "SESSION_ID_TO_REPLACE",
+  "origin": "unavailable",
+  "t_rel_s": 0,
+  "payload": {
+    "bio_baseline": {
+      "status": "waiting",
+      "clean_windows": null,
+      "required_clean_windows": 20,
+      "elapsed_s": null
+    },
+    "can_baseline": {
+      "status": "unavailable",
+      "coverage_pct": null,
+      "elapsed_s": null
+    },
+    "connections": {
+      "ecg": "unknown",
+      "ppg": "unknown",
+      "can": "unknown",
+      "model": "unknown"
+    }
+  }
+}
