@@ -1,0 +1,4 @@
+# Web display + original state machine only. No Torch / model dependencies.
+numpy>=1.26
+scipy>=1.11
+PyYAML>=6.0

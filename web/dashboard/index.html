@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>J_Berry PI | Driver State Monitor</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="app">
+<header class="masthead"><div class="brand"><div class="brand-mark">J</div><div><h1>J_BERRY PI</h1><small>DRIVER STATE INTELLIGENCE</small></div></div><div class="top-right"><span class="chip warn" id="modeChip">서버 연결 중</span><span class="chip" id="serverChip">서버 연결 대기</span><span class="chip" id="baselineChip">Baseline: 확인 대기</span><span class="clock" id="clock">00:00</span></div></header>
+<div class="headline"><div class="eyebrow">ON-DEVICE AI / ECG + PPG + CAN</div><h2>운전자 상태 통합 모니터링</h2><p>Raspberry Pi 로컬 웹 · 학생 모델 출력 연결 · Python State Machine v2</p></div>
+<div class="layout">
+<main class="column">
+<section class="panel hero"><div class="hero-top"><div><div class="tiny-caps">CURRENT DRIVER STATE</div><div class="state-copy"><div class="state-big invalid" id="stateText">수신 대기</div><div class="state-pill" id="stateId">WAITING</div></div><div class="state-explain" id="stateDesc">서버에서 상태를 불러오고 있습니다.</div></div><div class="chip ok" id="confidenceChip">연결 대기</div></div>
+<div class="stats"><div class="metric"><div class="value" id="probVal">—</div><div class="label">학생 졸음 점수 p</div></div><div class="metric"><div class="value" id="scoreVal">—</div><div class="label">상태 머신 score</div></div><div class="metric"><div class="value" id="hrVal">— <span class="unit">BPM</span></div><div class="label">ECG 심박수</div></div><div class="metric"><div class="value" id="confVal">—<span class="unit">%</span></div><div class="label">입력 신뢰도</div></div></div></section>
+<section class="panel pad"><div class="panel-title"><h3>졸음 점수 추이</h3><span class="subtle">10초 판정 간격 / 최근 6분</span></div><div class="graph"><div class="graphhead"><strong style="color:#56d6c8">S1-EP p</strong><span class="subtle">주의 임계 0.55 · 해제 0.40</span></div><canvas id="trendCanvas" width="1000" height="230"></canvas></div><div class="keyline"><span>표시한 p는 최종 졸음 확률로 검증된 임상 수치가 아니라 모델 점수입니다.</span><span id="timelineTime">T+00:00</span></div></section>
+<section class="panel pad"><div class="panel-title"><h3>생체 신호 모니터</h3><span class="subtle"><span id="waveNote">파형은 데모 모드의 합성 예시입니다</span></span></div><div class="signals"><div class="graph signal"><div class="graphhead"><strong><span class="legend-dot"></span>ECG · AD8232</strong><span class="subtle" id="ecgLabel">WAITING</span></div><canvas id="ecgCanvas" width="500" height="160"></canvas></div><div class="graph signal"><div class="graphhead"><strong><span class="legend-dot purple"></span>PPG · MAX30102</strong><span class="subtle" id="ppgLabel">WAITING</span></div><canvas id="ppgCanvas" width="500" height="160"></canvas></div></div><div class="keyline"><span>판정 채널: <strong id="channelText">수신 대기</strong></span><span>잡음 동결: <strong id="frozenText">—</strong></span></div></section>
+<section class="panel pad"><div class="panel-title"><h3>이벤트 타임라인</h3><span class="subtle">최근 이벤트</span></div><div id="eventLog" class="timeline" aria-live="polite"></div></section>
+</main>
+<aside class="column">
+<section class="panel pad"><div class="panel-title"><h3>입력 소스 / 시연 제어</h3><span class="subtle">Step = 모델 판정 10초</span></div>
+<div class="form-group"><label for="sourceMode">데이터 소스</label><select id="sourceMode"><option value="demo">데모 · 모의 모델 점수</option><option value="csv" disabled>추론 CSV · 아래에서 파일 선택</option><option value="live">실시간 · 모델 출력 API 대기</option></select></div><div class="form-group"><label for="scenario">생체 신호 / 학생 모델 출력</label><select id="scenario"><option value="normal">정상 상태 · p ≈ 0.24</option><option value="drowsy">졸음 추정 · p ≈ 0.82</option><option value="recover">회복 상태 · p ≈ 0.17</option><option value="noise">ECG 잡음 · PPG 대체 시도</option><option value="invalid">ECG·PPG 모두 불량</option><option value="manual">직접 지정한 p 사용</option></select></div>
+<div class="form-group" id="manualGroup" hidden><label for="manualP">임의 학생 점수 p: <strong id="manualLabel">0.70</strong></label><input id="manualP" type="range" min="0" max="1" step="0.01" value="0.7"></div>
+<div class="form-group"><label for="canScenario">CAN 확인 입력 · 상태 전이 시험 전용</label><select id="canScenario"><option value="none">CAN 확인 false</option><option value="confirm">시험용 CAN 확인 true (실제 감속 판단 아님)</option><option value="offline">CAN 미수신 / 지속시간으로 확인</option></select></div>
+<div class="buttonbar"><button class="btn primary" id="startBtn">▶ 자동 재생</button><button class="btn" id="stepBtn">+ 10초 판정</button><button class="btn danger" id="resetBtn">↺ 초기화</button></div>
+<div class="callout">자동 재생은 기본 0.55초마다 10초 구간을 진행하는 가속 시연입니다. 실제 모델이나 CAN 센서는 실행하지 않습니다. 다른 기기로 접속해도 같은 Pi의 상태를 함께 봅니다.</div><p id="notice" class="notice" role="status" aria-live="polite"></p></section>
+<section class="panel pad"><div class="panel-title"><h3>상태 머신 입력 / 출력</h3><span class="subtle">실제 코드 필드명 사용</span></div><div class="readout"><div><small>can_drowsy</small><strong id="canBool">—</strong></div><div><small>candidate</small><strong id="candBool">—</strong></div><div><small>q_ecg</small><strong id="qEcg">—</strong></div><div><small>q_ppg</small><strong id="qPpg">—</strong></div><div><small>hr_ecg / hr_ppg</small><strong id="bothHR">—</strong></div><div><small>quality / channel</small><strong id="qualityDetail">—</strong></div></div><div class="callout">코드 기준: 정상→주의는 40초, 주의→후보는 추가 60초, CAN 확인이 없으면 후보 상태가 추가 180초 유지되어야 졸음 확정입니다. 입력은 30초 창을 10초마다 갱신합니다.</div></section>
+<section class="panel pad"><div class="panel-title"><h3>실제 추론 CSV 재생</h3><span class="subtle">선택 파일을 Pi 서버로 전송</span></div><label class="file-label">CSV 선택: windows_scores.csv<input id="csvFile" type="file" accept=".csv,text/csv" /></label><div class="source-name" id="sourceName">현재: 서버 연결 대기</div><div class="switchline"><input type="checkbox" id="loopCsv" /><label for="loopCsv">파일 마지막에서 반복 재생</label></div><div class="callout"><code>selfmeasure_infer.py</code>의 점수·품질·시간 열을 읽습니다. 원시 ECG/PPG CSV는 이 입력이 아닙니다. 세션 변경·시간 공백·반복 시 상태를 초기화합니다. CAN 열이 없으면 확인 없음으로 처리합니다.</div></section>
+<section class="panel pad"><div class="panel-title"><h3>베이스라인 / 연결 현황</h3><span class="subtle">모델 내부 구현은 비워둠</span></div><div class="readout"><div><small>현재 기준 상태</small><strong id="baselineStatus">확인 대기</strong></div><div><small>실제 v2 기준 수집</small><strong>1분 안정 + 5분</strong></div><div><small>학생 모델</small><strong>출력 API만 준비</strong></div><div><small>상태 판정</small><strong>Python SM v2</strong></div></div><div class="footnote">실제 신경망과 Baseline 생성은 별도 추론 프로그램이 담당합니다. 이 서버는 점수를 받아 저장소의 원본 Python 상태 머신으로 상태를 계산합니다. CSV·실시간 모드에서는 원시 파형을 꾸며서 표시하지 않습니다.</div></section>
+</aside></div>
+<p class="footnote">J_Berry PI · Demo prototype · 입력 데이터의 시연/평가 용도. 데모 점수·파형은 합성 예시입니다. 실시간 모드는 실제 모델 출력 연결 전까지 수신 대기로 표시합니다.</p>
+</div>
+<script src="/app.js" defer></script>
+</body>
+</html>

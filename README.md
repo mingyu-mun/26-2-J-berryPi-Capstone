@@ -221,6 +221,18 @@ python scripts/selfmeasure_infer.py --session <실측 세션> ...    # 실측 �
 python scripts/sm_v2_eval.py ...                                 # 상태 머신 v2 평가
 ```
 
+## Raspberry Pi 웹 화면
+
+첨부 대시보드 디자인을 기반으로 한 로컬 웹 앱입니다. 모델 내부는 비워두고 데모·추론 CSV·실시간 모델 출력 API를 제공하며, 상태 판정은 원본 Python 상태 머신 v2가 처리합니다.
+
+```sh
+python3 -m venv .venv-web
+.venv-web/bin/python -m pip install -r web/dashboard/requirements.txt
+.venv-web/bin/python scripts/run_dashboard.py
+```
+
+같은 네트워크에서 `http://<Pi IP>:8000`으로 접속합니다. 실제 모델 수신 대기는 `--mode live`로 시작합니다. 센서 수집과 모델 추론은 별도 프로그램에서 연결합니다. 설치, CSV 형식, API와 부팅 자동 실행은 [웹 화면 안내](web/dashboard/README.md)를 참고하세요.
+
 ## 데이터 및 라이선스
 
 원본 생체데이터(공개 데이터와 직접 측정 데이터 모두), 운전자 프로필, 비밀번호와 API 키는 저장소에 올리지 않습니다. WESAD 는 비상업 조건이라 이를 쓴 학생 모델도 비상업 용도로만 씁니다. NormWear 가중치는 safetensors 형식만 사용합니다. 기업 제공 자료와 공개 데이터셋의 이용·배포 조건을 확인하고, 필요한 데이터는 별도 경로에서 관리합니다.
