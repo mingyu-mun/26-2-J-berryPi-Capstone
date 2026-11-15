@@ -136,9 +136,3 @@ T01~T08 중 핵심 연결·품질·기록·복구가 해결되지 않으면 정�
 - [ ] 시험 파일을 확인하고 필요한 별도 보관을 마쳤다.
 - [ ] 실패·미실시 항목과 재시험 조건을 정리했다.
 - [ ] 팀 공유용 요약에서 확인된 사실과 추정·미검증을 구분했다.
-
-## 관련 자료
-
-- [웹보드·통합 담당 후속 작업 계획](webboard-follow-up-plan.md)
-- [웹보드 설치·사용·입력 API](../web/dashboard/README.md)
-- [웹보드 데이터 규약](../web/dashboard/contract/WEBBOARD_DATA_CONTRACT.md)
