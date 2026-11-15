@@ -1,4 +1,5 @@
-# Web display + original state machine only. No Torch / model dependencies.
+# Webboard transport and contract validation; no Torch or inference weights.
 numpy>=1.26
 scipy>=1.11
 PyYAML>=6.0
+jsonschema>=4.21

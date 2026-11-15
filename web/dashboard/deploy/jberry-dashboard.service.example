@@ -6,7 +6,7 @@ After=network.target
 # Change the username and all paths to match this Raspberry Pi.
 User=pi
 WorkingDirectory=/home/pi/berryPi-Capstone
-ExecStart=/home/pi/berryPi-Capstone/.venv-web/bin/python scripts/run_dashboard.py --host 0.0.0.0 --port 8000 --mode live
+ExecStart=/home/pi/berryPi-Capstone/.venv-web/bin/python scripts/run_dashboard.py --host 0.0.0.0 --port 8000
 Environment=PYTHONUNBUFFERED=1
 Restart=on-failure
 RestartSec=3

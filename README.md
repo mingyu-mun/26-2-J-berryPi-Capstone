@@ -223,7 +223,7 @@ python scripts/sm_v2_eval.py ...                                 # 상태 머신
 
 ## Raspberry Pi 웹 화면
 
-첨부 대시보드 디자인을 기반으로 한 로컬 웹 앱입니다. 모델 내부는 비워두고 데모·추론 CSV·실시간 모델 출력 API를 제공하며, 상태 판정은 원본 Python 상태 머신 v2가 처리합니다.
+검정 배경과 시안 포인트의 계기판입니다. 실제 JSON 이벤트가 수신될 때만 심박·운전자 상태·ECG/PPG 파형·차량 데이터를 표시합니다. 모델 점수와 연결 설정은 접힌 상세 영역과 별도 설정 창으로 분리했습니다. 모의 점수·합성 파형·시나리오 생성 기능은 없습니다.
 
 ```sh
 python3 -m venv .venv-web
@@ -231,7 +231,7 @@ python3 -m venv .venv-web
 .venv-web/bin/python scripts/run_dashboard.py
 ```
 
-같은 네트워크에서 `http://<Pi IP>:8000`으로 접속합니다. 실제 모델 수신 대기는 `--mode live`로 시작합니다. 센서 수집과 모델 추론은 별도 프로그램에서 연결합니다. 설치, CSV 형식, API와 부팅 자동 실행은 [웹 화면 안내](web/dashboard/README.md)를 참고하세요.
+같은 네트워크에서 `http://<Pi IP>:8000`으로 접속합니다. `bio.wave`, `ai.decision`, `can.telemetry`, `system.status`를 동봉 규약에 따라 수신합니다. 최종 상태는 외부 통합 프로그램이 실행한 원본 Python 상태 머신의 출력을 사용합니다. Windows 설치·JSON 연결·실시간 주소·파일 재생은 [웹 화면 안내](web/dashboard/README.md)를 참고하세요.
 
 ## 데이터 및 라이선스
 
