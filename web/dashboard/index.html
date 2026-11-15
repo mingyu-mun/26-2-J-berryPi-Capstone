@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>J_BERRY PI | 운전자 모니터</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="contract-validator.js" defer></script>
+  <script src="webboard-state.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+<div class="dashboard">
+  <header class="topbar">
+    <a class="wordmark" href="#" aria-label="J Berry PI 계기판">J<span class="brand-dot">.</span>BERRY <span class="brand-pi">PI</span></a>
+    <div class="topbar-right">
+      <span class="transport"><i id="transportDot" class="dot"></i><span id="transportLabel">연결 대기</span></span>
+      <time id="wallClock" class="wall-clock"></time>
+      <button id="settingsButton" class="icon-button" type="button" aria-label="데이터 연결 설정" aria-haspopup="dialog">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16M8 4v6M16 14v6"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <div class="section-head"><h1>운전자 모니터</h1><div class="source-labels"><span id="viewSource">입력 대기</span><span id="bioSource">생체 미수신</span><span id="canSource">차량 미수신</span><span id="decisionSource" data-origin="simulated" hidden>판정 참조: 차량 시뮬레이션</span></div></div>
+    <section class="cluster" aria-label="운전자 계기판">
+      <div class="instrument heart-instrument">
+        <div class="instrument-label">심박수 <span class="detail-label">ECG</span></div>
+        <div class="dial">
+          <svg id="heartDial" class="dial-svg" viewBox="0 0 280 245" role="img" aria-label="심박수 눈금">
+            <path class="dial-track" d="M 63.63 216.37 A 108 108 0 1 1 216.37 216.37"/>
+            <g class="dial-ticks"></g><path class="dial-value" pathLength="100" d="M 63.63 216.37 A 108 108 0 1 1 216.37 216.37" hidden/>
+          </svg>
+          <div class="dial-reading"><strong id="ecgHr">··</strong><span>BPM</span></div>
+        </div>
+        <div class="secondary-reading"><span>PPG 맥박수</span><strong><span id="ppgHr">··</span><small> BPM</small></strong></div>
+      </div>
+
+      <div id="stateModule" class="driver-state" data-state="waiting">
+        <div class="state-orbit" aria-hidden="true"><svg viewBox="0 0 84 84"><circle cx="42" cy="42" r="34"/><path d="M24 43h10l5-13 8 25 5-12h8"/></svg></div>
+        <p class="state-caption">현재 운전자 상태</p>
+        <h2 id="driverState" class="state-title" aria-live="polite">데이터 수신 대기</h2>
+        <p id="stateDescription" class="state-description">연결된 데이터가 없습니다.</p>
+        <div class="connection-strip" aria-label="데이터 연결 상태">
+          <span><i id="ecgDot" class="dot"></i>ECG <b id="ecgConnection">대기</b></span>
+          <span><i id="ppgDot" class="dot"></i>PPG <b id="ppgConnection">대기</b></span>
+          <span><i id="canDot" class="dot"></i>CAN <b id="canConnection">대기</b></span>
+        </div>
+        <span id="measurementTime" class="measurement-time">측정 시각 미수신</span>
+      </div>
+
+      <div class="instrument speed-instrument">
+        <div class="instrument-label">차량 속력 <span id="speedFreshness" class="detail-label">미수신</span></div>
+        <div class="dial">
+          <svg id="speedDial" class="dial-svg" viewBox="0 0 280 245" role="img" aria-label="차량 속력 눈금">
+            <path class="dial-track" d="M 63.63 216.37 A 108 108 0 1 1 216.37 216.37"/>
+            <g class="dial-ticks"></g><path class="dial-value" pathLength="100" d="M 63.63 216.37 A 108 108 0 1 1 216.37 216.37" hidden/>
+          </svg>
+          <div class="dial-reading"><strong id="speedValue">··</strong><span>km/h</span></div>
+        </div>
+        <div class="secondary-reading"><span>핸들 조향각</span><strong><span id="steeringValue">··</span><small> °</small></strong></div>
+      </div>
+    </section>
+
+    <section class="baseline-strip" aria-label="개인 기준 수집 현황">
+      <div class="baseline-item"><div class="baseline-top"><h3>생체 기준</h3><span id="bioBaselineText">수신 대기</span></div><div class="baseline-track"><span id="bioBaselineFill" hidden></span></div><p id="bioBaselineDetail">개인 기준 수집 정보가 없습니다.</p></div>
+      <div class="baseline-item"><div class="baseline-top"><h3>주행 기준</h3><span id="canBaselineText">수신 대기</span></div><div class="baseline-track"><span id="canBaselineFill" hidden></span></div><p id="canBaselineDetail">차량 데이터 연결을 기다리고 있습니다.</p></div>
+    </section>
+
+    <section class="signal-section" aria-label="실제 생체신호">
+      <article class="signal-panel"><div class="signal-heading"><h3><span class="trace-mark"></span>ECG <span>심전도</span></h3><span id="ecgMeta" class="signal-meta">미수신</span></div><div class="wave-viewport"><canvas id="ecgWave" width="900" height="160" aria-label="수신한 ECG 파형"></canvas><p id="ecgEmpty" class="wave-empty">전처리 파형 수신 대기</p></div><div class="wave-footer"><span id="ecgQuality">품질 미확인</span><span id="ecgWindow">실제 수신 구간만 표시</span></div></article>
+      <article class="signal-panel"><div class="signal-heading"><h3><span class="trace-mark secondary"></span>PPG <span>맥파</span></h3><span id="ppgMeta" class="signal-meta">미수신</span></div><div class="wave-viewport"><canvas id="ppgWave" width="900" height="160" aria-label="수신한 PPG 파형"></canvas><p id="ppgEmpty" class="wave-empty">전처리 파형 수신 대기</p></div><div class="wave-footer"><span id="ppgQuality">품질 미확인</span><span id="ppgWindow">실제 수신 구간만 표시</span></div></article>
+    </section>
+
+    <section class="vehicle-strip" aria-label="주행 정보">
+      <div><span>조향각 변화율</span><strong><b id="steeringRate">··</b><small> °/s</small></strong></div>
+      <div><span>가속 페달</span><strong><b id="acceleratorValue">··</b><small id="acceleratorUnit"> RAW</small></strong></div>
+      <div><span>브레이크 페달</span><strong><b id="brakeValue">··</b><small id="brakeUnit"> RAW</small></strong></div>
+      <div class="vehicle-pattern"><span>개인 주행 패턴</span><strong id="drivingPattern">데이터 수신 대기</strong></div>
+    </section>
+
+    <details class="detail-panel" id="detailPanel"><summary>세부 데이터와 상태 기록 <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></summary>
+      <div class="detail-content">
+        <section class="score-section"><div class="score-numbers"><div><span>모델 졸음 점수</span><strong id="modelScore">··</strong></div><div><span>상태 누적 점수</span><strong id="stateScore">··</strong></div><div><span>신호 품질 가중치</span><strong id="qualityWeight">··</strong></div></div><canvas id="scoreTrend" width="1100" height="180" aria-label="수신한 모델 점수 및 누적 점수"></canvas><div class="trace-legend"><span>모델 점수</span><span>누적 점수</span><span>같은 세션의 측정 시간 기준</span></div></section>
+        <div class="detail-grid"><section><h3>상태 기록</h3><ol id="eventLog" class="event-log"><li class="no-events">수신한 상태 기록이 없습니다.</li></ol></section><section><h3>연결 정보</h3><dl class="quality-details"><div><dt>ECG 이상 간격 비율</dt><dd id="ecgAbnormal">··</dd></div><div><dt>PPG 이상 간격 비율</dt><dd id="ppgAbnormal">··</dd></div><div><dt>사용 신호</dt><dd id="decisionChannel">미수신</dd></div><div><dt>잡음에 따른 누적 보류</dt><dd id="freezeValue">미수신</dd></div><div><dt>차량 교차 확인</dt><dd id="canConfirmation">미수신</dd></div><div><dt>졸음 단계 진입 근거</dt><dd id="confirmationSource">미수신</dd></div></dl></section></div>
+      </div>
+    </details>
+  </main>
+  <footer class="page-footer"><span>J_BERRY PI</span><span id="sessionLabel">세션 연결 대기</span><span>실제 입력 데이터만 표시</span></footer>
+</div>
+
+<dialog id="settingsDialog" class="settings-dialog" aria-labelledby="settingsTitle">
+  <form method="dialog" class="dialog-heading"><div><span class="dialog-kicker">데이터 연결</span><h2 id="settingsTitle">입력 설정</h2></div><button class="icon-button" aria-label="설정 닫기">×</button></form>
+  <p class="dialog-intro">연결된 JSON 데이터를 표시합니다. 입력이 없으면 수신 대기 상태로 유지됩니다.</p>
+  <label class="field-label" for="inputSource">입력 소스</label><select id="inputSource"><option value="server">이 Pi의 수신 데이터</option><option value="websocket">외부 실시간 연결</option><option value="file">기록 파일</option></select>
+  <div id="socketControls" hidden><label class="field-label" for="socketUrl">WebSocket 주소</label><input id="socketUrl" type="url" placeholder="ws://192.168.0.20:8765" autocomplete="off" spellcheck="false"><button id="connectSocket" class="button primary" type="button">연결</button></div>
+  <div id="fileControls" hidden><label class="field-label" for="eventFile">JSON 또는 JSONL 기록</label><input id="eventFile" type="file" accept=".json,.jsonl,.ndjson,application/json"><p id="fileName" class="field-help">파일을 선택하면 내용을 먼저 검증합니다.</p><div class="file-actions"><button id="playFile" class="button primary" type="button" disabled>재생</button><button id="stepFile" class="button" type="button" disabled>다음 데이터</button><button id="rewindFile" class="button" type="button" disabled>처음으로</button></div><p id="replayPosition" class="field-help">기록 파일이 없습니다.</p></div>
+  <div id="serverHelp" class="field-help">같은 Pi 서버로 전달된 데이터를 모든 화면에서 함께 봅니다.</div>
+  <p id="inputNotice" class="input-notice" role="status" aria-live="polite"></p>
+</dialog>
+</body>
+</html>
