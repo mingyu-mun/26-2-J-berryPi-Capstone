@@ -233,6 +233,8 @@ python3 -m venv .venv-web
 
 같은 네트워크에서 `http://<Pi IP>:8000`으로 접속합니다. `bio.wave`, `ai.decision`, `can.telemetry`, `system.status`를 동봉 규약에 따라 수신합니다. 최종 상태는 외부 통합 프로그램이 실행한 원본 Python 상태 머신의 출력을 사용합니다. Windows 설치·JSON 연결·실시간 주소·파일 재생은 [웹 화면 안내](web/dashboard/README.md)를 참고하세요.
 
+실제 차량 시험 준비는 [웹보드·통합 담당 후속 작업 계획](docs/webboard-follow-up-plan.md), 현장 진행은 [차량 시연·통합 시험 계획](docs/vehicle-demo-plan.md)에 정리했습니다. 두 문서는 팀 검토용 초안이며 완료 여부와 시험 결과는 실제 확인 후 기록합니다.
+
 ## 데이터 및 라이선스
 
 원본 생체데이터(공개 데이터와 직접 측정 데이터 모두), 운전자 프로필, 비밀번호와 API 키는 저장소에 올리지 않습니다. WESAD 는 비상업 조건이라 이를 쓴 학생 모델도 비상업 용도로만 씁니다. NormWear 가중치는 safetensors 형식만 사용합니다. 기업 제공 자료와 공개 데이터셋의 이용·배포 조건을 확인하고, 필요한 데이터는 별도 경로에서 관리합니다.
