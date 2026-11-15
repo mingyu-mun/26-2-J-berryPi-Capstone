@@ -25,7 +25,6 @@ temp/
 __pycache__/
 *.py[cod]
 .venv/
-.venv-web/
 venv/
 .pytest_cache/
 .mypy_cache/

@@ -221,18 +221,6 @@ python scripts/selfmeasure_infer.py --session <실측 세션> ...    # 실측 �
 python scripts/sm_v2_eval.py ...                                 # 상태 머신 v2 평가
 ```
 
-## Raspberry Pi 웹 화면
-
-검정 배경과 시안 포인트의 계기판입니다. 실제 JSON 이벤트가 수신될 때만 심박·운전자 상태·ECG/PPG 파형·차량 데이터를 표시합니다. 모델 점수와 연결 설정은 접힌 상세 영역과 별도 설정 창으로 분리했습니다. 모의 점수·합성 파형·시나리오 생성 기능은 없습니다.
-
-```sh
-python3 -m venv .venv-web
-.venv-web/bin/python -m pip install -r web/dashboard/requirements.txt
-.venv-web/bin/python scripts/run_dashboard.py
-```
-
-같은 네트워크에서 `http://<Pi IP>:8000`으로 접속합니다. `bio.wave`, `ai.decision`, `can.telemetry`, `system.status`를 동봉 규약에 따라 수신합니다. 최종 상태는 외부 통합 프로그램이 실행한 원본 Python 상태 머신의 출력을 사용합니다. Windows 설치·JSON 연결·실시간 주소·파일 재생은 [웹 화면 안내](web/dashboard/README.md)를 참고하세요.
-
 ## 데이터 및 라이선스
 
 원본 생체데이터(공개 데이터와 직접 측정 데이터 모두), 운전자 프로필, 비밀번호와 API 키는 저장소에 올리지 않습니다. WESAD 는 비상업 조건이라 이를 쓴 학생 모델도 비상업 용도로만 씁니다. NormWear 가중치는 safetensors 형식만 사용합니다. 기업 제공 자료와 공개 데이터셋의 이용·배포 조건을 확인하고, 필요한 데이터는 별도 경로에서 관리합니다.
