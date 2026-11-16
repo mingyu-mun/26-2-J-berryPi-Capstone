@@ -1,0 +1,83 @@
+{
+ "A 처음 5분": {
+  "P-full": {
+   "win_auroc": 0.367,
+   "blk_auroc": 0.222,
+   "n": 171
+  },
+  "P-noshort": {
+   "win_auroc": 0.627,
+   "blk_auroc": 0.667,
+   "n": 171
+  },
+  "P-hr": {
+   "win_auroc": 0.612,
+   "blk_auroc": 0.778,
+   "n": 171
+  },
+  "P-enc": {
+   "win_auroc": 0.551,
+   "blk_auroc": 0.778,
+   "n": 171
+  },
+  "R-dev": {
+   "win_auroc": 0.423,
+   "blk_auroc": 0.444,
+   "n": 171
+  }
+ },
+ "B PPG 잡음 최소": {
+  "P-full": {
+   "win_auroc": 0.481,
+   "blk_auroc": 0.5,
+   "n": 168
+  },
+  "P-noshort": {
+   "win_auroc": 0.616,
+   "blk_auroc": 0.583,
+   "n": 168
+  },
+  "P-hr": {
+   "win_auroc": 0.565,
+   "blk_auroc": 0.583,
+   "n": 168
+  },
+  "P-enc": {
+   "win_auroc": 0.567,
+   "blk_auroc": 0.667,
+   "n": 168
+  },
+  "R-dev": {
+   "win_auroc": 0.478,
+   "blk_auroc": 0.5,
+   "n": 168
+  }
+ },
+ "C 정상 5~10분": {
+  "P-full": {
+   "win_auroc": 0.271,
+   "blk_auroc": 0.25,
+   "n": 167
+  },
+  "P-noshort": {
+   "win_auroc": 0.605,
+   "blk_auroc": 0.875,
+   "n": 167
+  },
+  "P-hr": {
+   "win_auroc": 0.588,
+   "blk_auroc": 0.75,
+   "n": 167
+  },
+  "P-enc": {
+   "win_auroc": 0.547,
+   "blk_auroc": 0.625,
+   "n": 167
+  },
+  "R-dev": {
+   "win_auroc": 0.229,
+   "blk_auroc": 0.0,
+   "n": 167
+  }
+ }
+}
