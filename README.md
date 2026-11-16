@@ -166,6 +166,7 @@ ECG / PPG + 차량 CAN (실시간 또는 파일 Replay)
 .
 ├── README.md
 ├── configs/                      # 입력 규약·모델·교사 설정
+├── models/                       # 추론용 모델 번들 (학생·교사 가중치, 정규화 통계)
 ├── src/driver_state/
 │   ├── adapters/                 # 공개 데이터셋 → 표준 폴더 (8종)
 │   ├── teacher/                  # 교사: RR 추출, 특징, 개인 기준, 평가 지표, F2C, NormWear 특징, 라벨링
@@ -179,7 +180,8 @@ ECG / PPG + 차량 CAN (실시간 또는 파일 Replay)
 │   ├── teacher.py                # rr / features / anomaly-eval / f2c-label 등
 │   ├── normwear_embed.py         # NormWear 표현 추출 (GPU)
 │   ├── student_cache.py, student_train.py      # 학생 입력 캐시·학습·평가 (GPU)
-│   ├── selfmeasure_infer.py      # 실측 세션 교사·학생 추론
+│   ├── selfmeasure_infer.py      # 실측 세션 교사·학생 추론 (서버, 캐시 사용)
+│   ├── export_bundle.py, infer_bundle.py       # 모델 번들 만들기 / 번들로 추론 (CPU)
 │   └── sm_v2_eval.py             # 상태 머신 v2 평가
 ├── tests/
 └── docs/
@@ -204,6 +206,8 @@ python -m pytest -q tests                       # 입력 규약·모델 인터�
 python scripts/run_benchmark.py --synthetic --compare-personal   # 5개 모델 LOSO, 개인화 전/후
 python scripts/demo_pipeline.py                 # 30초 calibration → 프로필 → Replay 추론 → 상태 머신
 ```
+
+**학습된 모델로 바로 추론하기 (CPU):** `python scripts/infer_bundle.py --session <세션 폴더> --out out/infer`. 가중치와 사용법은 [models/README.md](models/README.md)에 있습니다.
 
 결과는 `outputs/benchmark/`(Git 제외)에 저장됩니다. 입력 형식은 [공통 입력 규약](docs/input-spec.md)을 참고하세요. 협업 방법은 [협업 가이드](CONTRIBUTING.md)에 있습니다.
 
