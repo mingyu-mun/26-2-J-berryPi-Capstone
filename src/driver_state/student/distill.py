@@ -238,11 +238,19 @@ def train_eval(D: Data, cond: str, fold: int, seed: int, device: str, log=print,
         modes = {"": None, "_ecg": 0, "_ppg": 1}               # 한 채널만 넣은 평가
     if D.w_rr is not None and rr is not None:
         modes["_q"] = "q"                                       # 부록 A: RR z × w(q)
+    rr_keep = getattr(D, "rr_keep", None)
+    if rr_keep is not None and rr is not None:                  # 짧은 변동 HRV 끔 (2026-11-16)
+        modes["_ns"] = "ns"
+        if cond == "S1-EP":
+            modes["_ppg_ns"] = "ppg_ns"
     with torch.no_grad():
         for suf, only in modes.items():
             qmode = only == "q"
+            nsmode = only in ("ns", "ppg_ns")
             if qmode:
                 only = None
+            elif nsmode:
+                only = 1 if only == "ppg_ns" else None
             rows_all = np.flatnonzero(ev)
             if only == 1:
                 rows_all = rows_all[D.has[rows_all, 1]]
@@ -270,6 +278,8 @@ def train_eval(D: Data, cond: str, fold: int, seed: int, device: str, log=print,
                 gx = m.g(x.to(device))
                 gr = torch.stack([gref[k] for k in D.pk[rows]])
                 zr_np = rr[rows] * (D.w_rr[rows, None] if qmode else 1.0) if rr is not None else None
+                if nsmode and zr_np is not None:
+                    zr_np = zr_np * rr_keep[None, :]
                 zr_ = torch.as_tensor(np.asarray(zr_np, np.float32)).to(device) if rr is not None else None
                 res[rows] = m.logit(zr_, gx - gr).cpu().numpy()
             out[f"s_{cond}{suf}"] = res
