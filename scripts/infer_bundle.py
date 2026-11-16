@@ -133,6 +133,7 @@ def main():
     # 3. PPG 대체 경로: PRV RR 특징
     prrs = [extract_rr(rc, spec, "ppg") for rc in recs if "ppg" in rc.signals]
     zr_prv = np.zeros_like(zr); q_ppg = np.ones(len(win)); hr_ppg = np.full(len(win), np.nan)
+    valid_ppg = np.zeros(len(win), bool)
     if len(prrs) == len(recs):
         for x, y in zip(prrs, rrs):
             x.subject_id, x.t0 = y.subject_id, y.t0
@@ -140,10 +141,11 @@ def main():
         pwin, pprof = build_tables(prrs, spec)
         pz, _ = z_matrix(norm, pwin, pprof, names)
         k = ["session_id", "t_rel"]
-        pdf = pd.concat([pwin[k + ["hr_30"]], pd.DataFrame(pz, columns=[f"pz{i}" for i in range(pz.shape[1])])], axis=1)
+        pdf = pd.concat([pwin[k + ["hr_30", "valid"]].rename(columns={"valid": "valid_ppg"}), pd.DataFrame(pz, columns=[f"pz{i}" for i in range(pz.shape[1])])], axis=1)
         mm = win[k].merge(pdf, on=k, how="left")
         zr_prv = np.nan_to_num(mm[[f"pz{i}" for i in range(pz.shape[1])]].to_numpy(np.float32), nan=0.0)
         hr_ppg = mm["hr_30"].to_numpy(float)
+        valid_ppg = mm["valid_ppg"].fillna(False).to_numpy(bool)
         pby = {x.session_id: x for x in prrs}
         for sid, g in win.groupby("session_id"):
             q_ppg[g.index.to_numpy()] = abn_ratio(pby[sid], g["t_rel"].to_numpy(float))
@@ -151,6 +153,7 @@ def main():
     # 4. 학생
     res = win[["session_id", "t_rel", "valid"]].copy()
     res["hr_ecg"], res["hr_ppg"], res["q_ecg"], res["q_ppg"], res["dev_core"] = win["hr_30"].to_numpy(), hr_ppg, q, q_ppg, dev_core
+    res["valid_ppg"] = valid_ppg
     ep = load_students(mdir, "S1-EP", dev)
     res["student_EP_logit"] = student_logits(ep, X, R, zr, [1, 1], dev)
     res["student_PPG_logit"] = student_logits(ep, X, R, zr_prv, [0, 1], dev)
@@ -187,7 +190,7 @@ def main():
         g = g.sort_values("t_rel")
         for r in g.to_dict("records"):
             o = sm.step(WindowIn(t=r["t_rel"] + 30, p_ep=float(sig(r["student_EP_logit"])) if r["valid"] else None, q_ecg=float(r["q_ecg"]),
-                                 p_ppg=float(sig(r["student_PPG_logit"])), q_ppg=float(r["q_ppg"]),
+                                 p_ppg=float(sig(r["student_PPG_logit"])) if r["valid_ppg"] else None, q_ppg=float(r["q_ppg"]),
                                  hr_ecg=r["hr_ecg"] if np.isfinite(r["hr_ecg"]) else None,
                                  hr_ppg=r["hr_ppg"] if np.isfinite(r["hr_ppg"]) else None))
             lv.append((r["session_id"], r["t_rel"], o.level, o.candidate, o.channel, o.frozen))
