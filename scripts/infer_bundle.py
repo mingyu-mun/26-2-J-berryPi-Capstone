@@ -73,6 +73,8 @@ def main():
     ap.add_argument("--force", action="store_true", help="기준 수집이 실패해도 0~300초 기준으로 계속")
     ap.add_argument("--baseline", nargs=2, type=float, help="기준 구간 직접 지정 [초] (자동 수집 대신)")
     ap.add_argument("--teacher", action="store_true")
+    ap.add_argument("--ppg-noshort", dest="ppg_noshort", action="store_true",
+                    help="PPG 대체 판정에서 짧은 변동 HRV 를 끔 (상태 머신이 이 점수를 씀)")
     ap.add_argument("--normwear-dir"); ap.add_argument("--ckpt")
     a = ap.parse_args()
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
@@ -157,6 +159,10 @@ def main():
     ep = load_students(mdir, "S1-EP", dev)
     res["student_EP_logit"] = student_logits(ep, X, R, zr, [1, 1], dev)
     res["student_PPG_logit"] = student_logits(ep, X, R, zr_prv, [0, 1], dev)
+    short = ("rmssd", "sd1", "pnn50", "sd1_sd2", "hf_log", "lf_hf_log", "lf_nu", "sampen", "dfa_a1")
+    keep = np.array([0.0 if n.rsplit("_", 1)[0] in short else 1.0 for n in names], np.float32)
+    res["student_PPG_ns_logit"] = student_logits(ep, X, R, (zr_prv * keep).astype(np.float32), [0, 1], dev)
+    ppg_col = "student_PPG_ns_logit" if a.ppg_noshort else "student_PPG_logit"
     e = load_students(mdir, "S1-E", dev)
     if e:
         res["student_E_logit"] = student_logits(e, X[:, :1], R[:, :1], zr, [1], dev)
@@ -190,7 +196,7 @@ def main():
         g = g.sort_values("t_rel")
         for r in g.to_dict("records"):
             o = sm.step(WindowIn(t=r["t_rel"] + 30, p_ep=float(sig(r["student_EP_logit"])) if r["valid"] else None, q_ecg=float(r["q_ecg"]),
-                                 p_ppg=float(sig(r["student_PPG_logit"])) if r["valid_ppg"] else None, q_ppg=float(r["q_ppg"]),
+                                 p_ppg=float(sig(r[ppg_col])) if r["valid_ppg"] else None, q_ppg=float(r["q_ppg"]),
                                  hr_ecg=r["hr_ecg"] if np.isfinite(r["hr_ecg"]) else None,
                                  hr_ppg=r["hr_ppg"] if np.isfinite(r["hr_ppg"]) else None))
             lv.append((r["session_id"], r["t_rel"], o.level, o.candidate, o.channel, o.frozen))
