@@ -13,10 +13,11 @@
 | maus | 교사 라벨링 대상 (학생) | ecg, ppg | 없음 (n-back 수준은 labels_orig) |
 | clas | 교사 라벨링 대상 (학생) | ecg, ppg | 없음 (자극 표시는 labels_orig) |
 | wesad | 교사 라벨링 대상 (학생) | ecg 700 Hz, ppg 64 Hz | 없음 (조건 구간은 labels_orig) |
+| physdrive | 실차 잡음 오경보 점검 | ecg, ppg 30 Hz | 없음 (전부 정상 간주) |
 | uldd | 학생 PPG 경로 검증 | ppg 64 Hz (손목) | KSS 4분마다 → 이진 (LabelRule.kss) |
 """
-from . import advitam, clas, dddb, drozy, mand, maus, mpddf, uldd, wesad  # noqa: F401
+from . import advitam, clas, dddb, drozy, mand, maus, mpddf, physdrive, uldd, wesad  # noqa: F401
 
 ADAPTERS = {"advitam": advitam, "mpddf": mpddf, "dddb": dddb, "drozy": drozy, "mand": mand, "maus": maus,
-            "clas": clas, "wesad": wesad, "uldd": uldd}
+            "clas": clas, "wesad": wesad, "uldd": uldd, "physdrive": physdrive}
 TEACHER = ("advitam", "mpddf", "dddb", "drozy")
