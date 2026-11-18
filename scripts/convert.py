@@ -50,6 +50,10 @@ def main():
             mod.convert(a.src, a.out, rule, a.kss_label_sec)
         else:
             mod.convert(a.src, a.out, rule)
+    elif a.dataset == "uldd":
+        cfg = yaml.safe_load(open(a.config, encoding="utf-8"))
+        mod.convert(a.src, a.out, LabelRule(**{k: v for k, v in (cfg.get("labels") or {}).items()
+                                               if k in LabelRule.__dataclass_fields__}))
     elif a.dataset == "mand":
         mod.convert(a.src, a.out, a.participants, a.dehold)
     else:
