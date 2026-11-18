@@ -66,6 +66,31 @@ JSON 이벤트 배열 또는 한 줄에 이벤트 하나인 JSONL 파일을 선�
 
 재생 버튼은 파일을 선택한 후에만 활성화됩니다. 실제 기록의 측정 시각 간격으로 재생하며 일시정지·다음 데이터·처음으로 기능이 있습니다. 세션별 순서를 유지하고 세션 안에서 측정 시각을 정렬합니다. 끝에서 자동 반복하지 않습니다. 같은 세션에 기록된 공백을 임의 표본으로 채우지 않습니다.
 
+## AI → 웹보드 커넥터
+
+`src/driver_state/webboard_connector.py` 가 모델·상태 머신 결과를 이 규약의 이벤트로 바꿔 `POST /api/events` 로 보낸다.
+
+| 함수 | 이벤트 | 내용 |
+| --- | --- | --- |
+| `wave_channel`, `bio_wave` | `bio.wave` | 실제 전처리 파형 묶음. 비유한 표본이 있으면 그 채널은 null |
+| `ai_decision` | `ai.decision` | `WindowIn` 과 `StateMachineV2.step()` 이 돌려준 `StepOut` 을 그대로 직렬화. 기준 준비 전 output=null. CAN 이 전혀 없을 때의 졸음 확정만 `confirmation_source="persistence"` |
+| `system_status` | `system.status` | 생체·CAN 기준 상태와 연결 상태 |
+| `WebboardPublisher` | — | 1,000개·약 1.9 MB 단위로 나눠 전송 |
+
+기록된 세션으로 시험하기 (PC 또는 Pi):
+
+```bash
+python scripts/infer_bundle.py --session <세션 폴더> --out out/infer        # 학생 + 상태 머신 (CPU)
+python scripts/run_dashboard.py                                              # http://localhost:8000
+python scripts/webboard_replay.py --session <세션 폴더> --infer out/infer --speed 8
+python scripts/webboard_replay.py --session <세션 폴더> --infer out/infer --dump replay.jsonl   # '기록 파일' 재생용
+```
+
+- 파형은 공통 전처리 경로(100 Hz, a.u.)를 1초 묶음으로 보낸다. `quality_ok` 는 그 1초 원신호의 기존 품질 검사 결과다.
+- `ok_ecg`/`ok_ppg` 는 창 유효 조건(품질 블록, RR 개수, 이상 간격 10% 이하)이다.
+- CAN 은 보내지 않는다 (`can_origin="unavailable"`, `can_drowsy=null`).
+- 실시간 루프에서는 같은 함수로 이벤트를 만들고 `WebboardPublisher.send()` 를 부르면 된다.
+
 ## 화면의 데이터 원칙
 
 - 운전자 상태는 `ai.decision.payload.output`에 담긴 Python 최종 결과만 표시합니다. `candidate`는 level=1일 때 후보로 표시합니다.
