@@ -94,8 +94,12 @@ def build_events(sessions: list[Path], infer_dir: Path, sid_prefix: str, ppg_col
                            p_ppg=sig(r[ppg_col]) if ok_p and np.isfinite(r[ppg_col]) else None,
                            q_ppg=_f(r, "q_ppg"), hr_ecg=_f(r, "hr_ecg"), hr_ppg=_f(r, "hr_ppg"),
                            ok_ecg=ok_e, ok_ppg=ok_p, can_drowsy=None)
-            out = sm.step(win)
             ui_in = {**win.__dict__, "q_ecg": _f(r, "q_ecg")}
+            if win.t < ready_t:                       # 기준이 준비되기 전의 창: 판정하지 않는다
+                events.append(ai_decision(sid, ui_in, None, baseline_status="collecting", bio_origin="recorded",
+                                          can_origin="unavailable", origin="recorded"))
+                continue
+            out = sm.step(win)
             events.append(ai_decision(sid, ui_in, out, baseline_status="ready", bio_origin="recorded",
                                       can_origin="unavailable", origin="recorded"))
     return events
