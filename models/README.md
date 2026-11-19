@@ -19,7 +19,8 @@ pip install -r requirements.txt          # torch, scipy, pandas, safetensors ...
 python scripts/infer_bundle.py --session <세션 폴더> --out out/infer
 ```
 
-- 세션 폴더 형식은 `docs/data-handoff.md` 를 따른다: `meta.json` + `ecg.csv` + `ppg.csv`. 센서 쪽 변환기가 만드는 `data/jberry_sensor/<subject>/<session>/` 폴더를 그대로 넣으면 된다.
+- 세션 폴더 형식은 `docs/data-handoff.md` 를 따른다: `meta.json` + `ecg.csv` + `ppg.csv` (또는 `data.npz`).
+- 직접 측정한 zip 은 `scripts/convert_jberry_sensor.py` 로 바꾼다. 변환부터 평가까지 전체 절차는 [`docs/selfmeasure.md`](../docs/selfmeasure.md) 에 있다.
 - 같은 사람의 세션 여러 개를 넣으면 첫 세션의 기준 구간을 모두에 쓴다.
 - 기준 수집 (상태 머신 v2 2장):
   - 첫 세션의 60초 이후에서 ECG 이상 간격 5% 이하인 창 20개를 모아 5분 기준을 만든다.
