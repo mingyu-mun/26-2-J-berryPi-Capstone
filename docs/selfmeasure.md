@@ -56,4 +56,7 @@ python scripts/selfmeasure_eval.py --session data/converted/jberry_sensor/self/<
 | A5 | 0.72 | 0.78 |
 | A10 | 0.79 | 0.81 |
 
+같은 변환·같은 스크립트로 11-19 녹음은 F5 0.24, F10 0.52, A5 0.18, A10 0.54 였다. 규칙(dev_core) 창 AUROC 는
+11-18 F5 0.34·F10 0.73, 11-19 F5 0.04·F10 0.14 다 (이 변환 기준).
+
 녹음 한 개의 AUROC 는 변환·기준 정의만으로 이 정도 흔들린다. 연구실 PC 변환기를 확인하면 이 표를 갱신하고, 둘 중 하나를 표준으로 고정한다.

@@ -8,7 +8,7 @@ scripts/baseline_exp_rec.py (부록 B 실험, 11-18 rec4 의 0.73 을 낸 스크
 
 - 조건: F5 / F10 (처음 5·10분 고정 기준), A5 / A10 (+ 조건부 느린 갱신, src/driver_state/adaptive_baseline.py)
 - 학생: S1-EP (ECG+PPG 파형 + ECG RR 특징) 시드 평균 logit, 상태 머신 v2 는 ECG 경로만
-- 규칙: dev_core = 같은 기준의 z (심박·RMSSD·SDNN, 2분·5분 스케일) 의 RMS. 학습 없음, 기준 고정
+- 규칙: dev_core = 같은 기준의 z (심박·RMSSD·SDNN, 2분·5분 스케일) 의 RMS (자르지 않음, PersonalNormalizer 와 같음). 학습 없음
 - 기준: 세션 t_rel 0 ~ L (자동 선택·품질 검사 없음), 파형 기준 = 그 안의 30초 창 전부 (10초 간격)
 - 평가: --eval-from (기본 600초, 모든 조건 공통) 이후 창, 창 중심 시각의 라벨이 0/1 인 창
   * 창 AUROC: ECG 유효 창. 블록 AUROC: 원 녹음 시각 5분 블록 평균 (라벨이 섞인 블록은 다수결)
@@ -99,8 +99,9 @@ def main():
                 g0 = [m.g(torch.as_tensor(R)).median(0).values.numpy() for m in ms]
             lg, lv = simulate(t + 30, X, win["valid"].to_numpy(bool), q, m0, s0, sig_pop, G, g0, params, hr_idx, L,
                               AdaptCfg(adapt=adapt))
-            z = np.clip(np.nan_to_num((X - m0) / np.fmax(np.nan_to_num(s0, nan=0.0), sig_pop), nan=0.0), -5, 5)
-            rule = np.sqrt((z[:, core] ** 2).mean(1))
+            zr = (X - m0) / np.fmax(np.nan_to_num(s0, nan=0.0), sig_pop)   # dev_core 와 같게: 자르지 않고 nanmean
+            with np.errstate(invalid="ignore"):
+                rule = np.sqrt(np.nanmean(zr[:, core] ** 2, axis=1))
             li = np.clip(((t + 15) * lfs).astype(int), 0, len(rec.labels) - 1)
             d = pd.DataFrame({"t": t, "t_raw": t + off, "label": rec.labels[li], "valid": win["valid"].to_numpy(bool),
                               "q_ecg": q, "logit": lg, "rule": rule, "level": lv})
