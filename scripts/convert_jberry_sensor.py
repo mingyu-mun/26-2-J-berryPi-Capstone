@@ -8,8 +8,11 @@
 - 원본 파일 이름의 YYYYMMDD_HHMMSS 로 녹음 시작 시각(t0)을 정한다 (없으면 --t0).
 
 변환 규칙 (고정):
-- ECG = ECG_mV, PPG = PPG적외선원본. 필터는 파이프라인이 한다 (prefiltered=false).
-- 두 채널이 겹치는 구간만 쓰고, 채널별 실측 평균 주기의 균일 격자에 타임스탬프 기준 선형 보간.
+- ECG = ECG_mV. PPG = 'AC보정' 열, 시간은 'FIR지연보정' 시간 열 (11-18 rec4 를 낸 연구실 PC 변환과 같다.
+  --ppg-col 적외선 으로 바꿀 수 있지만, 학생 결과가 크게 달라진다: docs/selfmeasure.md 5장).
+  필터는 파이프라인이 한다 (prefiltered=false).
+- 세션 시작 = 원 녹음 --start 초 (기본 60.0, 측정 앱이 처음 60초를 버림). 끝 = 두 채널 공통 끝.
+  채널별 실측 평균 주기의 균일 격자에 타임스탬프 기준 선형 보간.
   0.2초 넘게 끊긴 곳이 있으면 멈춘다 (규약 4장).
 - 라벨 열이 표본마다 있으면 (정상/졸음) 1 Hz labels (0 정상, 1 졸음, -1 미라벨) 로 저장.
   5분마다 표시만 있는 형식 ("0~5분 정상" 등, 표시 시각 = 그 블록의 끝) 이면 블록 라벨로 바꾼다.
@@ -18,8 +21,7 @@
 
 결과: <out>/jberry_sensor/<subject>/<YYYY-MM-DD_HHMMSS>/{meta.json, data.npz, labels_orig.csv}
 
-주의: 11-18 rec4 결과(docs/results/2026-11-18-*)는 이 변환기 이전에 연구실 PC 에서 따로 변환한 세션으로 냈다.
-그 변환본과 이 변환기 결과는 창 AUROC 가 0.1 가량 다르다 (docs/selfmeasure.md 참고).
+기본 설정은 11-18 rec4 (연구실 PC 변환) 의 학생 창 AUROC 를 ±0.005 로 재현한다 (docs/selfmeasure.md 5장).
 """
 from __future__ import annotations
 
@@ -96,7 +98,8 @@ def _labels(e: pd.DataFrame, te: np.ndarray, t_a: float, t_b: float):
     return lab.astype(np.int8), orig
 
 
-def convert(raw: Path, out: Path, subject: str, t0: str | None) -> Path:
+def convert(raw: Path, out: Path, subject: str, t0: str | None, ppg_col: str = "AC보정", ppg_time: str = "fir",
+            start: float | None = 60.0) -> Path:
     tmp = None
     if raw.suffix.lower() == ".zip":
         tmp = tempfile.TemporaryDirectory()
@@ -107,11 +110,17 @@ def convert(raw: Path, out: Path, subject: str, t0: str | None) -> Path:
         root = raw
     e, p = _read(_find(root, "ecg")), _read(_find(root, "ppg"))
     te, xe = e.iloc[:, 0].to_numpy(float), e["ECG_mV"].to_numpy(float)
-    ir = [c for c in p.columns if "적외선" in c]
+    ir = [c for c in p.columns if ppg_col in c]
     if not ir:
-        raise KeyError(f"PPG 적외선 열이 없습니다: {list(p.columns)}")
-    tp, xp = p.iloc[:, 0].to_numpy(float), p[ir[0]].to_numpy(float)
-    t_a, t_b = max(te[0], tp[0]), min(te[-1], tp[-1])
+        raise KeyError(f"PPG '{ppg_col}' 열이 없습니다: {list(p.columns)}")
+    tcol = [c for c in p.columns if "FIR" in c] if ppg_time == "fir" else [p.columns[0]]
+    if not tcol:
+        raise KeyError(f"PPG FIR 지연 보정 시간 열이 없습니다: {list(p.columns)}")
+    tp, xp = p[tcol[0]].to_numpy(float), p[ir[0]].to_numpy(float)
+    t_b = min(te[-1], tp[-1])
+    t_a = float(start) if start is not None else max(te[0], tp[0])
+    if max(te[0], tp[0]) - t_a > 0.2:
+        raise ValueError(f"--start {t_a}s 가 채널 시작({te[0]:.3f}, {tp[0]:.3f}s)보다 0.2초 넘게 앞섭니다")
     fs_e, ecg = _uniform(te, xe, t_a, t_b, "ECG")
     fs_p, ppg = _uniform(tp, xp, t_a, t_b, "PPG")
     lab, orig = _labels(e, te, t_a, t_b)
@@ -129,7 +138,7 @@ def convert(raw: Path, out: Path, subject: str, t0: str | None) -> Path:
             "fs": {"ecg": fs_e, "ppg": fs_p}, "label_fs": 1 if lab is not None else None,
             "is_rest": False, "prefiltered": False, "channels": ["ecg", "ppg"],
             "raw_offset_sec": round(float(t_a), 3),
-            "notes": f"{raw.name}: ecg_1 ECG_mV / ppg_1 {ir[0]}, 원 시각 {t_a:.3f}~{t_b:.3f}s (t_rel 0 = 원 {t_a:.3f}s), 균일 격자 선형 보간"}
+            "notes": f"{raw.name}: ecg_1 ECG_mV / ppg_1 {ir[0]} (시간 {tcol[0]}), 원 시각 {t_a:.3f}~{t_b:.3f}s (t_rel 0 = 원 {t_a:.3f}s), 균일 격자 선형 보간"}
     (d / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     if orig is not None:
         orig.to_csv(d / "labels_orig.csv", index=False, encoding="utf-8")
@@ -145,9 +154,12 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--subject", default="self")
     ap.add_argument("--t0", help="녹음 시작 시각 ISO 8601 (파일 이름에서 못 찾을 때)")
+    ap.add_argument("--ppg-col", default="AC보정", help="PPG 열 이름에 들어 있는 글자 (기본 AC보정, 예: 적외선, 적색광)")
+    ap.add_argument("--ppg-time", default="fir", choices=["fir", "raw"], help="PPG 시간 열: FIR 지연 보정(기본) 또는 첫 열")
+    ap.add_argument("--start", type=float, default=60.0, help="세션 시작 원 시각[초] (기본 60.0). 음수면 두 채널 겹침 시작")
     a = ap.parse_args()
     for r in a.raw:
-        convert(Path(r), Path(a.out), a.subject, a.t0)
+        convert(Path(r), Path(a.out), a.subject, a.t0, a.ppg_col, a.ppg_time, None if a.start < 0 else a.start)
 
 
 if __name__ == "__main__":
