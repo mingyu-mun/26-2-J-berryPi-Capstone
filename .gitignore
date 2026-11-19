@@ -45,3 +45,7 @@ htmlcov/
 
 # 실험 결과·모델 산출물 (로컬 생성물)
 outputs/
+
+# 직접 측정한 녹음 변환본·추론 결과 (커밋 금지)
+data/converted/
+out/
