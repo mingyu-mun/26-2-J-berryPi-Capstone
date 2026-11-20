@@ -1,0 +1,8 @@
+VERSION "Can list.xlsx - speed / handwheel only"
+NS_ :
+BS_:
+BU_: Source
+BO_ 258 CARINFO: 8 Source
+ SG_ Speed : 56|8@1+ (1,0) [0|255] "km/h" Source
+BO_ 293 SAS_FD_01_10ms: 5 Source
+ SG_ SAS_angleVal : 24|16@1- (0.1,0) [-3276.8|3276.6] "deg" Source
