@@ -1,0 +1,6 @@
+{
+  "title": "정상상태측정2 원본",
+  "ecg": "원본_ecg_20261114_172639.csv",
+  "ppg": "원본_ppg_20261114_172639.csv",
+  "meta": "data/jberry_sensor/anon/2026-11-14_172641_s1/meta.json"
+}

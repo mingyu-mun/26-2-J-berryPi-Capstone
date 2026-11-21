@@ -109,7 +109,12 @@ export interface CanTelemetryPayload {
 }
 export type CanTelemetry = Envelope<'can.telemetry', CanTelemetryPayload>;
 export interface SystemStatusPayload {
-  bio_baseline: { status: BaselineStatus; clean_windows: number | null; required_clean_windows: number; elapsed_s: number | null; };
+  bio_baseline: {
+    status: BaselineStatus; clean_windows: number | null; required_clean_windows: number; elapsed_s: number | null;
+    // Actual clean 30s baseline-window mean; display reference, not a decision threshold.
+    ecg_reference?: {mean_bpm: number; clean_windows: number; start_s: number; end_s: number;
+      source_session_id?: string; profile_id?: string};
+  };
   can_baseline: { status: 'unavailable' | 'collecting' | 'ready'; coverage_pct: number | null; elapsed_s: number | null; };
   connections: { ecg: ConnectionState; ppg: ConnectionState; can: ConnectionState; model: ConnectionState; };
 }
