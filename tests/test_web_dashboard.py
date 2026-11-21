@@ -74,6 +74,22 @@ def test_duplicate_does_not_refresh_measurement_age():
     assert dash.snapshot()["events"][0]["age_s"] == 45
 
 
+def test_optional_hr_reference_accepts_old_events_and_rejects_invalid_references():
+    event=status(t=370)
+    event['origin']='live'
+    base=event['payload']['bio_baseline']
+    base.update(status='ready',ecg_reference=dict(mean_bpm=75.,clean_windows=21,start_s=60.,end_s=360.))
+    dash=Dashboard()
+    assert dash.ingest(event)['accepted']==1
+    assert dash.snapshot()['events'][0]['event']['payload']['bio_baseline']['ecg_reference']['mean_bpm']==75.
+    for key,value in [('mean_bpm',0),('clean_windows',0),('end_s',371.),('start_s',360.)]:
+        bad=copy.deepcopy(event)
+        bad['payload']['bio_baseline']['ecg_reference'][key]=value
+        with pytest.raises(APIError):Dashboard().ingest(bad)
+    bad=copy.deepcopy(event);bad['payload']['bio_baseline']['status']='collecting'
+    with pytest.raises(APIError):Dashboard().ingest(bad)
+
+
 def test_new_session_resets_stream_and_late_old_session_is_ignored():
     dash = Dashboard()
     dash.ingest(status("a", 100))
@@ -97,8 +113,8 @@ def test_cursor_overflow_recovers_latest_streams_and_is_bounded():
 
 
 @pytest.fixture
-def server():
-    instance = create_server("127.0.0.1", 0)
+def server(tmp_path):
+    instance = create_server("127.0.0.1", 0, library_dir=tmp_path)
     worker = threading.Thread(target=instance.serve_forever, daemon=True); worker.start()
     yield f"http://127.0.0.1:{instance.server_port}"
     instance.shutdown(); instance.server_close(); worker.join(timeout=2)

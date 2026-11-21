@@ -1013,6 +1013,20 @@
             "bio_baseline": {
               "type": "object",
               "properties": {
+                "ecg_reference": {
+                  "description": "Optional display reference from actual clean 30s ECG baseline windows. Not a model decision threshold.",
+                  "type": "object",
+                  "properties": {
+                    "mean_bpm": { "type": "number", "exclusiveMinimum": 0 },
+                    "source_session_id": { "type": "string", "minLength": 1 },
+                    "profile_id": { "type": "string", "pattern": "^[0-9a-f]{32}$" },
+                    "clean_windows": { "type": "integer", "minimum": 1 },
+                    "start_s": { "type": "number", "minimum": 0 },
+                    "end_s": { "type": "number", "minimum": 0 }
+                  },
+                  "required": ["mean_bpm", "clean_windows", "start_s", "end_s"],
+                  "additionalProperties": false
+                },
                 "status": {
                   "enum": [
                     "waiting",
