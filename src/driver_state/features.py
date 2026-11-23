@@ -7,7 +7,9 @@ R-peak / 맥파 peak 검출은 기준 구현(reference)이다. 데이터/전처�
 from __future__ import annotations
 
 import numpy as np
-from scipy.signal import butter, find_peaks, sosfiltfilt
+from scipy.signal import butter, find_peaks
+
+from .filtering import sos_filter
 
 from .data import WindowSet
 from .spec import CAN_FEATURES, ECG_FEATURES, PPG_FEATURES, InputSpec
@@ -17,7 +19,7 @@ _MIN_IBI, _MAX_IBI = 0.3, 2.0   # 허용 박동 간격 [s] (= 30~200 bpm)
 
 def _bandpass(x: np.ndarray, fs: float, lo: float, hi: float) -> np.ndarray:
     sos = butter(3, [lo, min(hi, 0.45 * fs)], btype="band", fs=fs, output="sos")
-    return sosfiltfilt(sos, x)
+    return sos_filter(sos, x)   # 인과/영위상은 filtering 스위치
 
 
 def detect_ecg_peaks(ecg: np.ndarray, fs: float) -> np.ndarray:

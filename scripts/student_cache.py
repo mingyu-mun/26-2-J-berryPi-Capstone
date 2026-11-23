@@ -20,13 +20,14 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from scipy.signal import butter, resample_poly, sosfiltfilt
+from scipy.signal import butter, resample_poly
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 warnings.filterwarnings("ignore")
 
 from driver_state.data_io import load_session  # noqa: E402
+from driver_state.filtering import sos_filter  # noqa: E402
 from driver_state.teacher.features import baseline_plan  # noqa: E402
 from driver_state.teacher.rr import load_rr_cache  # noqa: E402
 from driver_state.teacher.spec import TeacherSpec  # noqa: E402
@@ -37,12 +38,29 @@ BANDS = {"ecg": (0.5, 25.0), "ppg": (0.5, 8.0)}     # 64 Hz 나이퀴스트 32 H
 MAX_REF = 30
 
 
-def prep(x: np.ndarray, fs: float, ch: str) -> np.ndarray:
+def prep(x: np.ndarray, fs: float, ch: str, causal: bool = False) -> np.ndarray:
+    """대역통과 → 64 Hz. causal=True: sosfilt (실시간), 리샘플도 인과 FIR (lfilter 다상 + 지연 보정 없음)."""
     lo, hi = BANDS[ch]
     sos = butter(3, [lo, min(hi, 0.45 * fs)], btype="band", fs=fs, output="sos")
-    y = sosfiltfilt(sos, np.asarray(x, np.float64))
+    y = sos_filter(sos, np.asarray(x, np.float64), causal=causal)
     fr = Fraction(FS / fs).limit_denominator(1000)
+    if causal:
+        return causal_resample(y, fr.numerator, fr.denominator).astype(np.float32)
     return resample_poly(y, fr.numerator, fr.denominator).astype(np.float32)
+
+
+def causal_resample(y: np.ndarray, up: int, down: int) -> np.ndarray:
+    """resample_poly 와 같은 FIR 을 인과로: 출력 k 는 입력 k·down/up 시각까지의 표본만 쓴다.
+    대가로 FIR 반 길이만큼 늦다 (ECG 64 Hz 에서 약 0.1~0.3초). 창 자르기는 같은 시각 격자를 쓴다."""
+    from scipy.signal import firwin, upfirdn
+    if up == down:
+        return y
+    max_rate = max(up, down)
+    half = 10 * max_rate
+    h = firwin(2 * half + 1, 1.0 / max_rate, window=("kaiser", 5.0)) * up
+    z = upfirdn(h, y, up, down)                 # 인과 (앞쪽 0 채움), 지연 half/down 출력 표본
+    n_out = int(np.ceil(len(y) * up / down))
+    return z[:n_out]
 
 
 def cut(sig: np.ndarray, starts: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -61,21 +79,22 @@ def cut(sig: np.ndarray, starts: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return out, ok
 
 
-def session_signals(d: Path):
+def session_signals(d: Path, causal: bool = False):
     try:
         rec = load_session(d, channels=("ecg", "ppg"))
     except Exception:
         rec = load_session(d, channels=("ecg",))
-    return {ch: prep(rec.signals[ch], rec.fs[ch], ch) for ch in ("ecg", "ppg") if ch in rec.signals}
+    return {ch: prep(rec.signals[ch], rec.fs[ch], ch, causal) for ch in ("ecg", "ppg") if ch in rec.signals}
 
 
 def main():
     ap = argparse.ArgumentParser()
     for k in ("labels", "data", "cache", "student", "out"):
         ap.add_argument(f"--{k}", required=True)
+    ap.add_argument("--causal", action="store_true", help="실시간 학생: 인과 필터·리샘플")
     a = ap.parse_args()
     out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
-    spec = TeacherSpec()
+    spec = TeacherSpec(causal=a.causal)
     lab = pd.read_parquet(a.labels)
     wins = pd.concat([pd.read_parquet(Path(a.cache) / "windows.parquet"), pd.read_parquet(Path(a.student) / "windows.parquet")])
     wins = wins[["dataset_id", "row_id", "subject_id", "profile_key"]]
@@ -87,7 +106,7 @@ def main():
     t0 = time.time()
     pos = np.arange(N)
     for n_done, ((ds, subj, ses), g) in enumerate(idx.groupby(["dataset_id", "subject_id", "session_id"], dropna=False)):
-        sig = session_signals(Path(a.data) / ds / (subj if isinstance(subj, str) and subj else "anon") / ses)
+        sig = session_signals(Path(a.data) / ds / (subj if isinstance(subj, str) and subj else "anon") / ses, a.causal)
         rows = pos[g.index.to_numpy()]
         for c, ch in enumerate(("ecg", "ppg")):
             if ch in sig:
@@ -116,7 +135,7 @@ def main():
             if key not in need or key in rk:
                 continue
             r = next(x for x in lst if x.session_id == info.session_id)
-            sig = session_signals(Path(a.data) / r.dataset_id / (r.subject_id or "anon") / r.session_id)
+            sig = session_signals(Path(a.data) / r.dataset_id / (r.subject_id or "anon") / r.session_id, a.causal)
             starts = np.arange(info.start, info.end - WIN + 1e-6, spec.stride_sec)[:MAX_REF]
             if len(starts) == 0:
                 starts = np.array([max(0.0, info.start)])

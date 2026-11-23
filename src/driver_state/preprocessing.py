@@ -8,13 +8,17 @@
 4. 대역통과: ECG 0.5–40 Hz (기저선 흔들림·고주파 잡음 제거), PPG 0.5–8 Hz.
 품질 검사는 필터 전(3단계 직후) 신호로 윈도우마다 평탄·포화 여부를 본다.
 
+필터는 driver_state.filtering 스위치를 따른다: 기본 영위상(filtfilt), 실시간 학생은 인과(sosfilt·lfilter).
+
 데이터 담당이 이미 필터를 적용해 넘기면 ``Recording.prefiltered=True`` 로 1·2·4단계를 건너뛴다.
 """
 from __future__ import annotations
 
 import numpy as np
 from scipy.interpolate import CubicSpline
-from scipy.signal import butter, iirnotch, sosfiltfilt, filtfilt
+from scipy.signal import butter, iirnotch
+
+from .filtering import ba_filter, sos_filter
 
 from .spec import BIO_CHANNELS, InputSpec
 
@@ -34,7 +38,7 @@ def resample(x: np.ndarray, fs_in: float, fs_out: float, kind: str = "cubic") ->
 def _band(x: np.ndarray, fs: float, lo: float, hi: float) -> np.ndarray:
     hi = min(hi, 0.45 * fs)
     sos = butter(3, [lo, hi], btype="band", fs=fs, output="sos")
-    return sosfiltfilt(sos, x)
+    return sos_filter(sos, x)
 
 
 def prepare_channel(x: np.ndarray, fs_in: float, name: str, spec: InputSpec,
@@ -46,10 +50,10 @@ def prepare_channel(x: np.ndarray, fs_in: float, name: str, spec: InputSpec,
     if is_bio and not prefiltered:
         if p.notch_hz and fs_in / 2 > p.notch_hz + 1:
             b, a = iirnotch(p.notch_hz, Q=30.0, fs=fs_in)
-            x = filtfilt(b, a, x)
+            x = ba_filter(b, a, x)
         if fs_in > spec.fs:
             sos = butter(4, p.antialias_ratio * spec.fs, btype="low", fs=fs_in, output="sos")
-            x = sosfiltfilt(sos, x)
+            x = sos_filter(sos, x)
     raw = resample(x, fs_in, spec.fs, "cubic" if is_bio else "linear")
     if not is_bio or prefiltered:
         return raw, raw

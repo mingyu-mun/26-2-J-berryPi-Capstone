@@ -69,6 +69,9 @@ def main():
     ap.add_argument("--no-short", dest="no_short", action="store_true", help="짧은 변동 HRV 끈 평가 추가")
     ap.add_argument("--quality", help="부록 A: window_quality.py 결과 (있으면 _q 평가 추가)")
     ap.add_argument("--scores", help="--final: LODO student_scores.parquet (동작점 계산)")
+    ap.add_argument("--causal-input", dest="causal_input", action="store_true",
+                    help="실시간 학생: RR 입력 = zc_ (causal_relabel.py), --wave 는 student_cache.py --causal 결과")
+    ap.add_argument("--causal-target", dest="causal_target", action="store_true", help="목표도 인과 z 로 매긴 교사 (logit_c)")
     a = ap.parse_args()
     import torch
     dev = "cuda" if torch.cuda.is_available() else "cpu"
@@ -91,7 +94,7 @@ def main():
     if a.quality:
         qq = lab[["row_id", "dataset_id"]].merge(pd.read_parquet(a.quality), on=["row_id", "dataset_id"], how="left")
         w_rr = qq["w_rr"].fillna(0.0).to_numpy(np.float32)
-    D = Data(lab, index, wave, ref_index, ref_wave, pz, names, params, w_rr)
+    D = Data(lab, index, wave, ref_index, ref_wave, pz, names, params, w_rr, a.causal_input, a.causal_target)
     if a.no_short:                                  # 짧은 변동 HRV 끈 평가 추가 (_ns, _ppg_ns)
         short = ("rmssd", "sd1", "pnn50", "sd1_sd2", "hf_log", "lf_hf_log", "lf_nu", "sampen", "dfa_a1")
         D.rr_keep = np.array([0.0 if n.rsplit("_", 1)[0] in short else 1.0 for n in names], np.float32)

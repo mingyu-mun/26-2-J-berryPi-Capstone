@@ -92,11 +92,20 @@ def fold_logits(params: dict, tag: str, Z: np.ndarray) -> np.ndarray:
 
 
 class Data:
-    def __init__(self, lab, index, wave, ref_index, ref_wave, prv_z: np.ndarray | None, rr_names, params, w_rr=None):
+    def __init__(self, lab, index, wave, ref_index, ref_wave, prv_z: np.ndarray | None, rr_names, params, w_rr=None,
+                 causal_input: bool = False, causal_target: bool = False):
+        """causal_input: 학생 RR 입력을 zc_ (창 끝 기준 과거 전용, scripts/causal_relabel.py) 로.
+        causal_target: 목표 logit 도 인과 z 로 다시 매긴 교사 값 (logit_c). 기본은 오프라인 교사 목표."""
         self.lab, self.wave, self.ref_wave = lab, wave, ref_wave
         self.pk = index["profile_key"].to_numpy()
         self.has = index[["has_ecg", "has_ppg"]].to_numpy(bool)
-        self.zr = lab[[f"zr_{n}" for n in rr_names]].to_numpy(np.float32)
+        self.zr_t = lab[[f"zr_{n}" for n in rr_names]].to_numpy(np.float32)       # 목표 계산용 (오프라인)
+        self.causal_target = causal_target
+        if causal_input or causal_target:
+            self.zc = lab[[f"zc_{n}" for n in rr_names]].to_numpy(np.float32)
+        self.zr = self.zc if causal_input else self.zr_t                              # 학생 RR 입력
+        if causal_target:
+            self.zr_t = self.zc
         self.zn = lab[[c for c in lab.columns if c.startswith("zn_")]].to_numpy(np.float32)
         self.prv = prv_z
         self.w_rr = w_rr                                  # 부록 A: 창 품질 가중 (평가 전용)
@@ -116,11 +125,15 @@ class Data:
 
     def target(self, fold: int) -> np.ndarray:
         """교사 데이터: LODO oof logit, 학생 데이터: fold 교사로 다시 매김."""
-        y = self.lab["logit"].to_numpy(np.float32).copy()
-        Z = np.concatenate([self.zr, self.zn], 1)
+        y = self.final_target()
+        Z = np.concatenate([self.zr_t, self.zn], 1)
         tag = f"lodo_{TEACHER_DATASETS[fold]}"
         y[self.is_student] = fold_logits(self.params, tag, Z[self.is_student])
         return y
+
+
+    def final_target(self) -> np.ndarray:
+        return self.lab["logit_c" if self.causal_target else "logit"].to_numpy(np.float32).copy()
 
 
 def weights(ds: np.ndarray, grp: np.ndarray) -> np.ndarray:
@@ -140,7 +153,7 @@ def train_eval(D: Data, cond: str, fold: int, seed: int, device: str, log=print,
     chs = [CH[c] for c in cfg["ch"]]
     final = fold < 0                                          # 최종 학생: 전체 데이터, 교사 "final"
     test = None if final else TEACHER_DATASETS[fold]
-    target = D.lab["logit"].to_numpy(np.float32).copy() if final else D.target(fold)
+    target = D.final_target() if final else D.target(fold)
     need = _need(cfg, cfg["ch"])
     has_any = np.zeros(len(D.lab), bool)
     for c in cfg["ch"]:

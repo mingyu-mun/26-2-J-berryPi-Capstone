@@ -43,6 +43,10 @@ class TeacherSpec:
     # RR CNN+GRU 입력
     tacho_sec: float = 300.0
     tacho_fs: float = 4.0
+    # 실시간(인과) 입력: True 면 창 [t, t+W] 의 특징이 창 끝 e=t+W 이전 표본만 쓴다.
+    #   스케일 L 구간 [e−L, e], 추세 [e−2·trend_half, e], 타코그램 [e−tacho_sec, e], 필터는 sosfilt·lfilter.
+    # False (기본) = 기존 오프라인 교사: 창 중심 c 앞뒤 L/2, filtfilt.
+    causal: bool = False
     version: str = TEACHER_VERSION
 
     @property

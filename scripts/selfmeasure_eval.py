@@ -81,7 +81,7 @@ def main():
         if rec.labels is None:
             raise ValueError(f"{sdir}: labels 가 없습니다")
         lfs = rec.label_fs or 1.0
-        wav = {c: prep(rec.signals[c], rec.fs[c], c) for c in ("ecg", "ppg")}
+        wav = {c: prep(rec.signals[c], rec.fs[c], c, spec.causal) for c in ("ecg", "ppg")}
         for cond in a.conds:
             L, adapt = CONDS[cond]
             r = extract_rr(rec, spec, "ecg"); r.meta["baseline_range"] = [0.0, L]

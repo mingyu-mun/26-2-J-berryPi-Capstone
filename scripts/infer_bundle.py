@@ -126,11 +126,11 @@ def main():
         rc = by[sid][1]
         for c, ch in enumerate(("ecg", "ppg")):
             if ch in rc.signals:
-                X[g.index.to_numpy(), c] = cut(prep(rc.signals[ch], rc.fs[ch], ch), g["t_rel"].to_numpy(float))[0]
+                X[g.index.to_numpy(), c] = cut(prep(rc.signals[ch], rc.fs[ch], ch, spec.causal), g["t_rel"].to_numpy(float))[0]
     rc0 = by[info.session_id][1]
     for c, ch in enumerate(("ecg", "ppg")):
         if ch in rc0.signals:
-            R[:, c] = cut(prep(rc0.signals[ch], rc0.fs[ch], ch), rs)[0]
+            R[:, c] = cut(prep(rc0.signals[ch], rc0.fs[ch], ch, spec.causal), rs)[0]
 
     # 3. PPG 대체 경로: PRV RR 특징
     prrs = [extract_rr(rc, spec, "ppg") for rc in recs if "ppg" in rc.signals]

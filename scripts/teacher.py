@@ -425,6 +425,8 @@ def cmd_f2c_label(a, cfg):
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", default=str(ROOT / "configs/teacher.yaml"))
+    ap.add_argument("--causal", action="store_true",
+                    help="실시간 학생 입력: 인과 필터 + 창 끝 기준 과거 전용 RR 창 (rr·features 단계)")
     sp = ap.add_subparsers(dest="cmd", required=True)
     p = sp.add_parser("synth"); p.add_argument("--out", required=True); p.add_argument("--subjects", type=int, default=6)
     p.add_argument("--minutes", type=float, default=30.0); p.add_argument("--seed", type=int, default=0)
@@ -469,6 +471,8 @@ def main() -> None:
             p.add_argument("--features", choices=["rr", "nw", "rrnw"], default="rr"); p.add_argument("--nw-dir", dest="nw_dir")
     a = ap.parse_args()
     cfg = load_cfg(a.config)
+    if a.causal:
+        cfg = dict(cfg); cfg["teacher"] = {**(cfg.get("teacher") or {}), "causal": True}
     globals()[f"cmd_{a.cmd.replace('-', '_')}"](a, cfg)
 
 

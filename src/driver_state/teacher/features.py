@@ -4,7 +4,9 @@
 휴식(is_rest) 세션은 기준 전용이라 창을 만들지 않는다. 키 (dataset_id, subject_id, session_id, t_start).
 
 특징은 창 중심 c = t + window/2 를 기준으로 스케일 L 마다 [c − L/2, c + L/2) 의 정상 RR 로 계산한다.
-교사는 오프라인 라벨러라 미래 문맥을 써도 된다 (학생은 쓰지 않음).
+교사는 오프라인 라벨러라 미래 문맥을 써도 된다.
+spec.causal=True (실시간 학생 입력) 이면 창 끝 e = t + window 에서 과거로만: [e − L, e).
+30초 스케일은 두 방식이 같은 구간 [t, t+30) 이다.
 """
 from __future__ import annotations
 
@@ -43,8 +45,22 @@ def scale_values(rr: RRSeries, a: float, b: float, sec: float, spec: TeacherSpec
     return vals, cov
 
 
+def scale_range(t: float, sec: float, spec: TeacherSpec) -> tuple[float, float]:
+    """창 시작 t 의 스케일 sec 구간. 오프라인 = 창 중심 앞뒤, 인과 = 창 끝에서 과거로."""
+    if spec.causal:
+        e = t + spec.window_sec
+        return e - sec, e
+    c = t + spec.window_sec / 2
+    return c - sec / 2, c + sec / 2
+
+
 def trend_values(rr: RRSeries, c: float, spec: TeacherSpec) -> list[float]:
-    a, b = c - spec.trend_half_sec, c + spec.trend_half_sec
+    """c = 창 중심. 인과면 [창 끝 − 2·trend_half, 창 끝]."""
+    if spec.causal:
+        b = c + spec.window_sec / 2
+        a = b - 2 * spec.trend_half_sec
+    else:
+        a, b = c - spec.trend_half_sec, c + spec.trend_half_sec
     t, nn, _, cov = _segment(rr, a, b)
     if cov < spec.min_coverage or len(nn) < 20:
         return [np.nan, np.nan]
@@ -149,7 +165,7 @@ def session_windows(rr: RRSeries, spec: TeacherSpec, skip: tuple[float, float] |
                      and n_bad <= spec.max_abnormal_ratio * max(n_rr, 1))
         vals, covs = [], {}
         for sec in spec.scales:
-            v, cov = scale_values(rr, c - sec / 2, c + sec / 2, sec, spec)
+            v, cov = scale_values(rr, *scale_range(t, sec, spec), sec, spec)
             vals += v
             covs[f"coverage_{int(sec)}"] = cov
         vals += trend_values(rr, c, spec)
@@ -209,10 +225,12 @@ def build_tables(rrs: list[RRSeries], spec: TeacherSpec, n_jobs: int = 1) -> tup
 
 # ---------------------------------------------------------------- 타코그램 (모델 B)
 def tachogram(rr: RRSeries, c: float, spec: TeacherSpec) -> np.ndarray:
-    """창 중심 c 앞뒤 tacho_sec/2 의 정상 RR [ms] 을 tacho_fs 로 선형 보간 → (2, T): [RR ms, 결측 마스크]."""
+    """창 중심 c 앞뒤 tacho_sec/2 (인과면 창 끝까지 과거 tacho_sec) 의 정상 RR [ms] 을 tacho_fs 로 선형 보간
+    → (2, T): [RR ms, 결측 마스크]."""
     T = int(round(spec.tacho_sec * spec.tacho_fs))
-    grid = c - spec.tacho_sec / 2 + np.arange(T) / spec.tacho_fs
-    t, nn, _, _ = _segment(rr, grid[0] - 3, grid[-1] + 3)
+    start = c + spec.window_sec / 2 - spec.tacho_sec if spec.causal else c - spec.tacho_sec / 2
+    grid = start + np.arange(T) / spec.tacho_fs
+    t, nn, _, _ = _segment(rr, grid[0] - 3, grid[-1] + (0.0 if spec.causal else 3.0))   # 인과: 창 끝 뒤 박동 안 씀
     out = np.zeros((2, T), np.float32)
     if len(nn) < 2:
         out[1] = 1

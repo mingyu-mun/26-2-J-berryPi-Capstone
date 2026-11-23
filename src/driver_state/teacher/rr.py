@@ -17,9 +17,10 @@ from pathlib import Path
 
 import numpy as np
 from scipy.ndimage import median_filter
-from scipy.signal import butter, sosfiltfilt
+from scipy.signal import butter
 
 from ..data import Recording
+from ..filtering import causal_filters, sos_filter
 from ..features import detect_ecg_peaks, detect_ppg_peaks_adaptive
 from ..preprocessing import prepare_channel, window_quality
 from ..spec import InputSpec
@@ -100,21 +101,27 @@ def flag_abnormal(rr: np.ndarray, jump: float) -> np.ndarray:
 
 
 def extract_rr(rec: Recording, spec: TeacherSpec, channel: str = "ecg") -> RRSeries:
-    """channel="ppg": 맥박 간격(PRV). 적응 최소 간격으로 찾은 수축기 최고점을 ±80 ms 안에서 포물선 보간."""
+    """channel="ppg": 맥박 간격(PRV). 적응 최소 간격으로 찾은 수축기 최고점을 ±80 ms 안에서 포물선 보간.
+    spec.causal 이면 모든 필터를 인과(sosfilt·lfilter)로 건다 (실시간 학생 입력)."""
+    with causal_filters(True if spec.causal else None):
+        return _extract_rr(rec, spec, channel)
+
+
+def _extract_rr(rec: Recording, spec: TeacherSpec, channel: str) -> RRSeries:
     ins = _input_spec(spec, rec)
     filt, raw = prepare_channel(rec.signals[channel], rec.fs[channel], channel, ins, rec.prefiltered)
     fs = spec.fs
     if channel == "ppg":
         peaks = detect_ppg_peaks_adaptive(filt, fs)
         sos = butter(3, [0.5, min(8.0, 0.45 * fs)], btype="band", fs=fs, output="sos")
-        pw = sosfiltfilt(sos, filt)
+        pw = sos_filter(sos, filt)
         pw = pw - pw.min()                       # refine_peaks 는 |x| 최대를 찾으므로 양수로
         beat_t = refine_peaks(pw, peaks, fs, search_sec=0.08) / fs if len(peaks) else np.zeros(0)
     else:
         peaks = detect_ecg_peaks(filt, fs)
         # 정밀 위치는 QRS 대역(5–25 Hz) 신호로 잡는다 (기저선 영향 제거, 극성 무관)
         sos = butter(3, [5.0, min(25.0, 0.45 * fs)], btype="band", fs=fs, output="sos")
-        qrs = sosfiltfilt(sos, filt)
+        qrs = sos_filter(sos, filt)
         beat_t = refine_peaks(qrs, peaks, fs) / fs if len(peaks) else np.zeros(0)
     rr = np.diff(beat_t)
     abnormal = flag_abnormal(rr, spec.rr_jump) if len(rr) else np.zeros(0, bool)
