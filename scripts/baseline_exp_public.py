@@ -25,6 +25,8 @@ from driver_state.teacher.metrics_time import bootstrap_m1, m1_dataset  # noqa: 
 from sm_v2_eval import entries, episodes  # noqa: E402
 
 TEACHER = ("advitam", "dddb", "drozy", "mpddf")
+CONDS = {"F5": (300.0, False), "F10": (600.0, False), "A5": (300.0, True), "A10": (600.0, True)}
+KEY = ["dataset_id", "group", "session_id", "t_rel"]
 
 
 def main():
@@ -32,6 +34,8 @@ def main():
     for k in ("label-dir", "wave", "cache", "oof", "out"):
         ap.add_argument(f"--{k}", required=True)
     ap.add_argument("--models", default=str(ROOT / "models"))
+    ap.add_argument("--quality", help="quality.parquet (기본: label-dir 안)")
+    ap.add_argument("--conds", nargs="+", default=["F5", "A5"], choices=list(CONDS))
     a = ap.parse_args(); out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     mdir = Path(a.models); B = json.loads((mdir / "bundle.json").read_text(encoding="utf-8"))
@@ -41,7 +45,7 @@ def main():
         sd = load_file(str(p)); m = Student(2, "dist", sd["W"].numpy(), 0.0, 0.0, 36); m.load_state_dict(sd); m.eval(); ms.append(m.to(dev))
         params.append({"W": sd["W"].numpy().astype(float), "alpha": float(sd["alpha"]), "b": float(sd["b"])})
     lab = pd.read_parquet(Path(a.label_dir) / "f2c_labels.parquet")
-    q = pd.read_parquet(Path(a.label_dir) / "quality.parquet")[["row_id", "dataset_id", "q"]]
+    q = pd.read_parquet(a.quality or Path(a.label_dir) / "quality.parquet")[["row_id", "dataset_id", "q"]]
     W = Path(a.wave); wave = np.load(W / "wave.npy", mmap_mode="r"); ref_wave = np.load(W / "ref_wave.npy")
     ref_index = pd.read_parquet(W / "ref_index.parquet"); index = pd.read_parquet(W / "index.parquet")
     keep = lab["dataset_id"].isin(TEACHER).to_numpy()
@@ -50,7 +54,11 @@ def main():
     L = lab.iloc[rows][["row_id", "dataset_id", "group", "session_id", "t_rel", "y"]].copy()
     L["wrow"] = rows
     L["profile_key"] = index["profile_key"].to_numpy()[rows]
-    L = L.merge(wt[["row_id", "dataset_id", "valid"] + names], on=["row_id", "dataset_id"], how="left")
+    if B["spec"].get("causal"):              # 인과 캐시는 row_id 가 라벨 표와 달라 창 키로 붙인다
+        w2 = wt[KEY + ["valid"] + names].assign(t_rel=wt["t_rel"].round(3))
+        L = L.assign(t_rel=L["t_rel"].round(3)).merge(w2, on=KEY, how="left")
+    else:
+        L = L.merge(wt[["row_id", "dataset_id", "valid"] + names], on=["row_id", "dataset_id"], how="left")
     L = L.merge(q, on=["row_id", "dataset_id"], how="left")
     # 인코더 출력
     G = [np.zeros((len(L), 32), np.float32) for _ in ms]
@@ -65,8 +73,8 @@ def main():
             gref[pk] = [m.g(r).median(0).values.cpu().numpy() for m in ms]
     P = pt.set_index("profile_key")
     hr_idx = names.index("hr_120")
-    res = {c: np.full(len(L), np.nan) for c in ("F5", "A5")}
-    lev = {c: np.zeros(len(L), int) for c in ("F5", "A5")}
+    res = {c: np.full(len(L), np.nan) for c in a.conds}
+    lev = {c: np.zeros(len(L), int) for c in a.conds}
     tls = []
     for (ds, grp, ses), g in L.groupby(["dataset_id", "group", "session_id"]):
         g = g.sort_values("t_rel")
@@ -82,9 +90,11 @@ def main():
         Gs = []
         for k in range(len(ms)):
             a_ = np.zeros((n, 32), np.float32); a_[pos] = G[k][g.index.to_numpy()]; Gs.append(a_)
-        base_end = 300.0 if pk.split("#")[-1] == ses else None
+        own = pk.split("#")[-1] == ses
         yg = np.full(n, -1); yg[pos] = g["y"].to_numpy(int)
-        for c, adapt in (("F5", False), ("A5", True)):
+        for c in a.conds:
+            Lb, adapt = CONDS[c]
+            base_end = Lb if own else None
             lg, lv = simulate(grid + 30, X, valid, qq, m0, s0, sig_pop, Gs, gref[pk], params, hr_idx, base_end, AdaptCfg(adapt=adapt))
             res[c][g.index.to_numpy()] = lg[pos]; lev[c][g.index.to_numpy()] = lv[pos]
             ent = entries(lv); eps = episodes(yg)
@@ -95,13 +105,19 @@ def main():
     for c in res:
         L[c] = res[c]
     tb = pd.read_parquet(a.oof)[["row_id", "dataset_id", "tbin"]]
-    t = L[(L["y"] >= 0) & L["valid"].fillna(False) & np.isfinite(L["F5"]) & np.isfinite(L["A5"])].merge(tb, on=["row_id", "dataset_id"])
-    M = {c: {ds: m1_dataset(gg, c)[0] for ds, gg in t.groupby("dataset_id")} for c in ("F5", "A5")}
-    Bt = bootstrap_m1(t, ["F5", "A5"]); d = Bt[:, 1] - Bt[:, 0]
+    ok = (L["y"] >= 0) & L["valid"].fillna(False)
+    for c in a.conds:
+        ok &= np.isfinite(L[c])
+    t = L[ok].merge(tb, on=["row_id", "dataset_id"])
+    M = {c: {ds: m1_dataset(gg, c)[0] for ds, gg in t.groupby("dataset_id")} for c in a.conds}
+    Bt = bootstrap_m1(t, list(a.conds))
     T = pd.DataFrame(tls)
     rep = {"n": int(len(t)), "M1": {c: float(np.mean(list(v.values()))) for c, v in M.items()}, "M1_ds": M,
-           "A5-F5": {"diff": float(np.mean(list(M["A5"].values())) - np.mean(list(M["F5"].values()))),
-                     "lo": float(np.percentile(d, 2.5)), "hi": float(np.percentile(d, 97.5))}}
+           "M1_ci": {c: [float(np.nanpercentile(Bt[:, i], 2.5)), float(np.nanpercentile(Bt[:, i], 97.5))] for i, c in enumerate(a.conds)}}
+    for x, y in (("A5", "F5"), ("A10", "F10"), ("F10", "F5"), ("A10", "A5")):
+        if x in a.conds and y in a.conds:
+            d = Bt[:, a.conds.index(x)] - Bt[:, a.conds.index(y)]
+            rep[f"{x}-{y}"] = {"diff": rep["M1"][x] - rep["M1"][y], "lo": float(np.percentile(d, 2.5)), "hi": float(np.percentile(d, 97.5))}
     for c, g in T.groupby("cond"):
         rep[c] = {"fa_per_h": float(g.fa.sum() / g.alert_h.sum()), "miss_rate": float(g.miss.sum() / max(g.n_ep.sum(), 1)),
                   "warn_alert": float(np.nanmean(g.warn_alert)),
