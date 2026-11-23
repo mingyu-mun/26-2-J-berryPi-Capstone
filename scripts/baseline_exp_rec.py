@@ -28,7 +28,7 @@ from driver_state.teacher.spec import TeacherSpec  # noqa: E402
 from student_cache import cut, prep  # noqa: E402
 from window_quality import abn_ratio  # noqa: E402
 
-SELF = Path(r"C:/Users/NLL434-m/Downloads/datasets/selfmeasure/converted/jberry_sensor/self01")
+SELF = Path(r"C:/Users/NLL434-m/Downloads/datasets/selfmeasure/converted/jberry_sensor/self01")  # 연구실 PC 경로. 다른 PC 는 --self-dir
 RECS = {  # 이름: (세션, 원본 기준 오프셋 초, 5분 블록 라벨 (원본 시각 기준, 1 = 졸음) 또는 None)
     "rec1 (정상, ECG 잡음)": ("2026-11-12_175237_s1", 0.88, None),
     "rec2 (졸린 상태 측정)": ("2026-11-12_222323_s1", 2.37, None),
@@ -40,6 +40,7 @@ EVAL_FROM = 600.0   # 두 기준 모두 끝난 뒤의 창만 비교
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--out", required=True); ap.add_argument("--models", default=str(ROOT / "models"))
+    ap.add_argument("--self-dir", default=str(SELF), help="실측 변환본 폴더 (jberry_sensor/self01). rec4 는 scripts/convert_rec4_orig.py 로 만든다")
     a = ap.parse_args(); out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
     mdir = Path(a.models); B = json.loads((mdir / "bundle.json").read_text(encoding="utf-8"))
     spec = TeacherSpec.from_dict(B["spec"]); names = B["rr_feature_names"]
@@ -51,7 +52,9 @@ def main():
     hr_idx = names.index("hr_120")
     rows, tl = [], {}
     for name, (ses, off, lab) in RECS.items():
-        rec = load_session(SELF / ses, channels=("ecg", "ppg")); rec.prefiltered = False
+        if not (Path(a.self_dir) / ses).exists():
+            print("건너뜀 (변환본 없음):", name); continue
+        rec = load_session(Path(a.self_dir) / ses, channels=("ecg", "ppg")); rec.prefiltered = False
         wav = {c: prep(rec.signals[c], rec.fs[c], c) for c in ("ecg", "ppg")}
         for cond, (L, adapt) in CONDS.items():
             r = extract_rr(rec, spec, "ecg"); r.meta["baseline_range"] = [0.0, L]
