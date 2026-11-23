@@ -19,8 +19,8 @@ step() { echo "=== $(date '+%F %T') $*"; }
 [ -f $D/cache_student_c/windows.parquet ] || { step "RR 학생 3종";
   $PY -u scripts/teacher.py --causal rr --data $S --out $D/cache_student_c/rr --jobs $JOBS
   $PY -u scripts/teacher.py --causal features --rr $D/cache_student_c/rr --out $D/cache_student_c --jobs $JOBS --no-tacho; }
-[ -f $D/cache_prv_c/windows.parquet ] || { step "PRV 7종";
-  $PY -u scripts/teacher.py --causal rr --channel ppg --data $T $S --out $D/cache_prv_c/rr --jobs $JOBS
+[ -f $D/cache_prv_c/windows.parquet ] || { step "PRV 학생 3종 (기존 cache_prv 와 같은 범위)";
+  $PY -u scripts/teacher.py --causal rr --channel ppg --data $S --out $D/cache_prv_c/rr --jobs $JOBS
   $PY -u scripts/teacher.py --causal features --rr $D/cache_prv_c/rr --out $D/cache_prv_c --jobs $JOBS --no-tacho; }
 
 # 2. 라벨 표에 인과 RR z 붙이기 (교사 목표는 그대로)
