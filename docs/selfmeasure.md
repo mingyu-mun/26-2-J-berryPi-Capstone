@@ -12,23 +12,27 @@ pip install torch --index-url https://download.pytorch.org/whl/cu128   # GPU 없
 pip install -r requirements.txt
 ```
 
-## 2. 변환: 측정 zip → 규약 세션 폴더
+## 2. 변환: 측정 zip → 규약 세션 폴더 (표준 변환기)
 
 ```sh
-python scripts/convert_jberry_sensor.py --raw "측정 20261119_20_14.zip" --out data/converted
+python scripts/convert_jberry_sensor.py --raw drive-download-20261118T124939Z-1-001.zip --out data/converted --labels-array
 ```
 
-- ECG = `ecg_1_*.csv` 의 `ECG_mV` (약 435 Hz). PPG = `ppg_1_*.csv` 의 `AC보정` 열과 `FIR지연보정` 시간 열 (약 100.7 Hz).
-  11-18 rec4 를 낸 연구실 PC 변환과 같은 규칙이다 (5장). 결과는 시작점에 민감하니 바꾸지 않는다.
-- 세션 시작은 원 녹음 60.0초, 균일 격자로 선형 보간한다. 0.2초 넘게 끊기면 멈춘다.
-- 라벨: 표본마다 `정상/졸음` 이 있는 형식 (11-19) 과 5분마다 블록 끝에 표시하는 형식 (11-18) 을 모두 읽는다.
-- 세션 시각 0 = 원 녹음 약 60초. `meta.json` 의 `raw_offset_sec` 에 남는다.
+- 표준 변환기는 11-18 rec4 를 연구실 PC 에서 실제로 변환한 코드다 (2026-11-23 대화 기록에서 복구해 표준으로 확정).
+  rec4 에 돌리면 연구실 PC 의 원 변환본과 `data.npz`·`meta.json`·`labels_orig.csv` 가 모두 같다.
+  PR #12 의 역추정 변환기는 폐기했다.
+- ECG = `ecg_1_*.csv` 의 `ECG_mV` (0·2번 열). PPG = `ppg_1_*.csv` 의 `시간_FIR지연보정`·`AC보정신호` (1·7번 열).
+- 각 채널을 원 녹음 60.0초부터 그 채널 마지막 시각까지, 고정 fs (ECG 435.33, PPG 100.66 Hz) 균일 격자에 선형 보간한다.
+  세션 시각 0 = 원 녹음 60초, `t0` = 녹음 시작 + 60초. 세션 이름 `<YYYY-MM-DD_HHMMSS>_s1`, 참가자 `self01`.
+- 라벨: 5분 블록 라벨을 `labels_orig.csv` 에 남긴다 (`--labels 정상,정상,...` 로 주거나 라벨링 열의 블록 끝 표시에서 읽음).
+  `--labels-array` 를 주면 1 Hz 라벨 배열도 넣는다 (`selfmeasure_eval.py` 에 필요, 원 변환본에는 없던 배열이라 기본은 끔).
+  표본마다 `정상/졸음` 이 있는 형식 (11-19) 도 1 Hz 배열로는 읽는다.
 - 직접 측정한 데이터와 변환 결과(`data/`, `outputs/`, `out/`)는 커밋하지 않는다.
 
 ## 3. 추론 (실시간과 같은 방식)
 
 ```sh
-python scripts/infer_bundle.py --session data/converted/jberry_sensor/self/<세션> --out out/infer [--baseline 0 540]
+python scripts/infer_bundle.py --session data/converted/jberry_sensor/self01/<세션> --out out/infer [--baseline 0 540]
 ```
 
 - 기준 구간을 자동으로 고른다 (60초 이후 ECG 깨끗한 창 20개). `--baseline A B` 로 직접 지정할 수 있다.
@@ -37,7 +41,7 @@ python scripts/infer_bundle.py --session data/converted/jberry_sensor/self/<세�
 ## 4. 평가 (라벨과 비교, 고정 설정)
 
 ```sh
-python scripts/selfmeasure_eval.py --session data/converted/jberry_sensor/self/<세션> [...] --out out/selfmeasure_eval
+python scripts/selfmeasure_eval.py --session data/converted/jberry_sensor/self01/<세션> [...] --out out/selfmeasure_eval
 ```
 
 - `scripts/baseline_exp_rec.py` (부록 B, 11-18 rec4 결과) 와 같은 계산이다. 경로를 고정하지 않고 라벨을 세션에서 읽는다.
@@ -45,7 +49,14 @@ python scripts/selfmeasure_eval.py --session data/converted/jberry_sensor/self/<
 - 평가 창은 600초 이후 (모든 조건 공통), 라벨 0/1 창만.
 - `infer_bundle.py` 와 숫자가 다르다. 그쪽은 기준을 자동 선택하고, 파형 기준을 30개로 제한하고, PPG 대체를 쓴다.
 
-## 5. 변환 규칙과 결과 민감도 (2026-11-19 확인)
+## 5. 변환 규칙과 결과 민감도
+
+2026-11-23: 원 변환 코드를 복구해 표준으로 정했다 (2장). 표준 변환기 + `selfmeasure_eval.py` 로 11-18 rec4 를 돌리면
+학생 S1-EP 창 AUROC 가 F5 0.629 / F10 0.731 / A5 0.715 / A10 0.788 로 11-18 기록과 같다
+(재현 기준 출력: `docs/results/2026-11-23-repro`).
+
+아래는 2026-11-19 에 역추정 변환기 (폐기) 로 확인한 민감도 기록이다. 결론 (창 격자 정렬에 민감) 은 그대로 유효하다.
+
 
 11-18 rec4 결과는 연구실 PC 의 변환기로 만든 세션으로 냈고, 그 변환기는 레포에 없었다. 기록에 남은 수치(PPG 이상 간격 7.4%,
 조건별 AUROC)로 역추정해 `AC보정` PPG + `FIR지연보정` 시간 + 원 시각 60.0초 시작임을 확인했고, 이를 기본값으로 정했다.

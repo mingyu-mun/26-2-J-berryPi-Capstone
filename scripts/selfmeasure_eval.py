@@ -1,7 +1,9 @@
 """실측 녹음 평가 (CPU, 재학습 없음). 어느 PC 에서든 같은 숫자가 나오게 설정을 고정한다. docs/selfmeasure.md 참고.
 
-    python scripts/convert_jberry_sensor.py --raw "측정 20261119_20_14.zip" --out data/converted
-    python scripts/selfmeasure_eval.py --session data/converted/jberry_sensor/self/2026-11-19_192922 --out out/selfmeasure_eval
+    python scripts/convert_jberry_sensor.py --raw <측정 zip> --out data/converted --labels-array
+    python scripts/selfmeasure_eval.py --session data/converted/jberry_sensor/self01/<세션> --out out/selfmeasure_eval
+
+표준 변환기 + --labels-array 로 11-18 rec4 를 넣으면 창 AUROC 가 11-18 결과와 같다 (F5 0.629 / F10 0.731 / A5 0.715 / A10 0.788).
 
 scripts/baseline_exp_rec.py (부록 B 실험, 11-18 rec4 의 0.73 을 낸 스크립트) 와 같은 계산이다. 차이는 경로를 고정하지 않고
 라벨을 세션의 labels (1 Hz) 에서 읽는다는 점뿐이다.

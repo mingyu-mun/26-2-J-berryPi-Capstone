@@ -8,16 +8,16 @@
   ]
  },
  "baseline_used": [
-  "2026-11-18_190640",
+  "2026-11-18_190640_s1",
   60.0,
   450.0
  ],
  "per_session": {
-  "2026-11-18_190640": {
-   "windows": 160,
-   "valid": 147,
-   "student_alarm_rate": 0.6190476190476191,
-   "time_in_warning_or_above": 0.84375,
+  "2026-11-18_190640_s1": {
+   "windows": 161,
+   "valid": 148,
+   "student_alarm_rate": 0.6148648648648649,
+   "time_in_warning_or_above": 0.8385093167701864,
    "drowsy_confirmed": 79,
    "ppg_fallback_windows": 2
   }
