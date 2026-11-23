@@ -1,0 +1,9 @@
+session,model,windows,valid_ecg,ppg_fallback,alarm_ecg,warn_time,baseline_ok,auc_EP,auc_rule,auc_PPG,warn_normal,warn_drowsy
+2026-11-12_175237_s1,models,147,73,10,0.466,0.116,False,,,,,
+2026-11-12_175237_s1,models_causal,147,63,62,0.778,0.422,False,,,,,
+2026-11-12_222323_s1,models,145,110,6,0.273,0.255,True,,,,,
+2026-11-12_222323_s1,models_causal,145,115,19,0.365,0.379,True,,,,,
+2026-11-15_172827_s1,models,171,0,134,,0.538,False,,,,,
+2026-11-15_172827_s1,models_causal,171,0,116,,0.0,False,,,,,
+2026-11-18_190640_s1,models,161,148,2,0.615,0.839,True,0.694,0.759,0.311,0.634,1.0
+2026-11-18_190640_s1,models_causal,160,140,14,0.786,0.669,True,0.613,0.59,0.403,0.843,0.533
