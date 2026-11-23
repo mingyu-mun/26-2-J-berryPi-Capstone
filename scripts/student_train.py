@@ -71,6 +71,9 @@ def main():
     ap.add_argument("--scores", help="--final: LODO student_scores.parquet (동작점 계산)")
     ap.add_argument("--causal-input", dest="causal_input", action="store_true",
                     help="실시간 학생: RR 입력 = zc_ (causal_relabel.py), --wave 는 student_cache.py --causal 결과")
+    ap.add_argument("--folds", nargs="+", type=int, help="이 fold 만 학습 (기본 전부)")
+    ap.add_argument("--save-models", dest="save_models", action="store_true", help="LODO fold 모델 저장 (<out>/fold_<test>_<cond>_s<seed>.pt)")
+    ap.add_argument("--train-only", dest="train_only", action="store_true", help="LODO 학습·점수 저장만, 평가 생략")
     ap.add_argument("--causal-target", dest="causal_target", action="store_true", help="목표도 인과 z 로 매긴 교사 (logit_c)")
     a = ap.parse_args()
     import torch
@@ -132,10 +135,13 @@ def main():
             continue
         acc: dict[str, list] = {}
         tgt = np.full(len(lab), np.nan, np.float32)
-        for fold in range(n_folds()):
+        for fold in (a.folds if a.folds is not None else range(n_folds())):
             per_seed: dict[str, list] = {}
             for seed in a.seeds:
-                o, _ = train_eval(D, cond, fold, seed, dev, hp=hp)
+                o, mm = train_eval(D, cond, fold, seed, dev, hp=hp)
+                if a.save_models:
+                    from driver_state.teacher.pairs import TEACHER_DATASETS as _TD
+                    torch.save({k: v.cpu() for k, v in mm.state_dict().items()}, out / f"fold_{_TD[fold]}_{cond}_s{seed}.pt")
                 for k, v in o.items():
                     if k != "target":
                         per_seed.setdefault(k, []).append(v)
@@ -149,6 +155,8 @@ def main():
         res["target"] = np.where(np.isfinite(tgt), tgt, res["target"] if "target" in res else np.nan)
         res.to_parquet(res_p)
 
+    if a.train_only:
+        return
     # ------------------------------------------------------------- 평가
     s0 = pd.read_parquet(a.s0_oof)[["row_id", "dataset_id", "tbin", "s_F2"]].rename(columns={"s_F2": "S0"})
     f2c = pd.read_parquet(a.f2c_oof)[["row_id", "dataset_id", "s_F2"]].rename(columns={"s_F2": "F2C"})
