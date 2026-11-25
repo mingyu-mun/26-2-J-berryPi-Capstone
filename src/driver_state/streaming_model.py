@@ -74,7 +74,11 @@ def wave_windows(signal,fs,ch,starts,bundle):
 
 
 class CausalStudent:
-    def __init__(self,model_dir,*,feature_mode,experimental,threads=1):
+    def __init__(self,model_dir,*,feature_mode,experimental,threads=1,rpeak_threshold='global'):
+        # 'global': 학습 때와 같은 R-peak 임계 (버퍼 전체 99 백분위). 'rolling': 과거 10초 블록 중앙값 (실시간 시험용).
+        if rpeak_threshold not in ('global','rolling'):
+            raise ValueError(f'unknown rpeak_threshold: {rpeak_threshold}')
+        self.rpeak_threshold=rpeak_threshold
         if feature_mode!='causal_trailing_v1' or experimental is not True:
             raise ValueError('streaming S1-EP requires explicit experimental causal_trailing_v1 configuration')
         import torch
@@ -216,7 +220,9 @@ class CausalStudent:
         if self.zero is None:
             self.zero=offset
         rec=self._record(signals,fs)
-        rrs={c:extract_rr(rec,self.spec,c) for c in signals if len(signals[c])/fs[c]>=30}
+        mode=getattr(self,'rpeak_threshold','global')
+        options={} if mode=='global' else dict(rpeak_threshold=mode)   # global = unchanged training-time call
+        rrs={c:extract_rr(rec,self.spec,c,**options) for c in signals if len(signals[c])/fs[c]>=30}
         if self.status!='ready':
             self._calibrate(rec,rrs,offset,end)
             if end-self.zero>=600 and self.status!='ready':

@@ -102,6 +102,10 @@ python scripts/run_dashboard.py --can-sim --can-sim-steering       # 선택: PR 
 - 화면에는 `can_origin=simulated`일 때만 운전자 상태 아래에 `차량 경고: …` 한 줄을 표시한다(화면에는 시뮬레이터 표기를 하지 않고 발표에서 설명). `can.telemetry`의 `status_codes`에 네 신호 원시값을 싣는다. 실차·기록 CAN은 표시하지 않는다.
 - 내장 합성 주행: 20초부터 30초마다 차선 경고(1.5초)와 부주의 경고(3초)를 번갈아 내고, 35초부터 60초마다 방향지시등을 켠 차로 변경(그 안에서 차선 경고 1초, 제외 대상)을 넣는다. 시연용이며 성능 근거가 아니다.
 
+### 통합 테스트 도구
+
+`scripts/can_sim_scenario.py`: `make`(합성 CAN JSONL 생성), `check`(10초 창별 `can_drowsy`·원인 출력, Unity 기록 점검), `e2e`(가짜 고점수 모델 + 실제 상태 머신으로 CAN 유무 비교·규약 검증, 모델 가중치 불필요), `bio`(합성 원본 ECG·PPG 기록 폴더 생성, 재생 흐름 점검용). CAN 시나리오는 판정 재생 기록보다 길어야 한다.
+
 ### Unity 출력 형식
 
 Unity의 차선 이탈 경고·부주의 경고 기능 출력을 회사 CAN 매핑(`Can list.xlsx`) 형식으로 내보낸다. 둘 중 하나:
@@ -115,6 +119,21 @@ Unity의 차선 이탈 경고·부주의 경고 기능 출력을 회사 CAN 매�
 2. **BLF**: 회사 매핑 프레임. 속도 `0x102`(bit 56/8), 조향 `0x125`(bit 24/16, ×0.1°), 부주의 경고 `0x100` `Careless_Warn`(bit 24/4), 차선안전·방향지시등 `0x101` `LaneSafe_indi`(28/4)·`LTurnSig_Indi`(32/4)·`RTurnSig_Indi`(40/4). DBC: `git_upload_ver1/mapping/can_list.dbc`, `can_list_warnings.dbc`.
 
 값: `LaneSafe_indi` 0 Off / 1 Yellow / 2 GreenBlink / 3 Gray / 4 Green / 5 YellowWarn, `Careless_Warn` 0 Off / 1 Yellow / 2 YellowBlink / 3 YellowWarn, 방향지시등 0 Off / 1~3 점멸.
+
+## 실시간 R-peak 임계 (`--rpeak-threshold rolling`, 시험용)
+
+실시간 경로는 10초마다 지금까지의 버퍼(기준 준비 뒤에는 최근 330초)로 R-peak 를 다시 찾는다. 기존 임계(`global`, 학습과 같음)는
+버퍼 전체 99 백분위의 0.3배라서, 전극이 안정되기 전 초반 잡음이 크면 임계가 올라가 몇 분 동안 박동을 놓친다.
+`rolling` 은 과거 10초 블록 8개의 99 백분위 **중앙값**을 쓰므로 잡음 블록 몇 개에 끌려가지 않고, 현재 블록과 그 뒤 신호는 쓰지 않는다.
+모델 가중치는 그대로이며, 학습 때 입력과 다른 검출이므로 판정이 좋아진다는 보장은 없다. 실측으로 비교한 뒤 정한다.
+
+```bash
+python scripts/rpeak_stream_check.py --recording outputs/local-recordings/<기록>   # 박동 검출 비교 (모델 불필요, 수 초)
+python scripts/run_dashboard.py --rpeak-threshold rolling [--can-sim-scenario ...]   # 웹보드 판정 재생
+```
+
+- 임계를 바꾸면 **기준을 다시 계산**해야 한다. `rolling` 으로 만든 기준은 처리 정보에 `rpeak_threshold` 가 들어가 `global` 과 섞이지 않는다.
+- Pi 실시간(`tests/run.py`)은 설정 파일 `inference.rpeak_threshold` 에 `"rolling"` 을 넣는다. 없으면 `global`.
 
 ## 원본 기록 폴더 형식
 
