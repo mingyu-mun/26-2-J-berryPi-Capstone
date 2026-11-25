@@ -12,6 +12,11 @@
 //     마우스  : 화면 가로 위치 = 핸들 위치 (절대 위치 방식, 아날로그라 가장 부드러움)
 //     게임패드: 스틱 = 핸들 위치, 중앙 부근은 둔하게(expo 커브) 해서 고속 미세 조향 쉬움
 //   공통: 속도가 오를수록 낼 수 있는 최대 핸들각을 줄인다(속도 감응형) → 고속 불안정 방지.
+//   조향 보조(2026-11-26): 운전자 핸들각(_humanSw)과 별도로 DriverAssist 가 정한 보정각을 더한다.
+//     최종 핸들각 = 운전자 핸들각 + clamp(assistGain × assistTargetDeg, ±assistCapDeg)
+//     assistTargetDeg 는 차로 중심 추종 조향(곡률 + 편차·헤딩 되먹임)이라, 운전자가 꺾으면 그만큼 더해지고
+//     보조는 벗어난 만큼 되돌린다. 보정각에 상한이 있어 운전자가 그보다 크게 꺾으면 차로를 벗어날 수 있다
+//     (LKAS 의 토크 상한과 같은 역할).
 //   바퀴는 애커먼 기하(안쪽 바퀴를 더 꺾음)로 조향하고, 안티롤바로 차체 롤을 줄인다.
 using UnityEngine;
 
@@ -72,6 +77,9 @@ namespace CapstoneSim
         [HideInInspector] public bool externalControl;
         [HideInInspector] public float extThrottle, extBrake, extSteerWheelDeg;
 
+        // ---------- 조향 보조 (DriverAssist 가 매 물리 스텝 채움) ----------
+        [HideInInspector] public float assistTargetDeg, assistGain, assistCapDeg;
+
         // ---------- 로거가 읽어 가는 값 ----------
         public float ThrottleInput { get; private set; }     // 0~1 (실제 페달 위치)
         public float BrakeInput { get; private set; }        // 0~1
@@ -87,11 +95,18 @@ namespace CapstoneSim
         public int TurnSignal { get; set; }                  // -1 = 좌, 0 = 없음, +1 = 우
         public SteerMode ActiveSteerSource { get; private set; } = SteerMode.Keyboard;
         public float CurrentSteerLockDeg { get; private set; }
+        /// <summary>운전자 입력만으로 만든 핸들각 [deg] (보조 보정 제외). 부주의(핸들 조작 없음) 판정에 쓴다</summary>
+        public float HumanSteeringWheelDeg => _humanSw;
+        /// <summary>조향 보조가 더한 핸들각 [deg]</summary>
+        public float AssistWheelDeg { get; private set; }
+        /// <summary>마지막으로 운전자가 조향 입력을 준 시각 (Time.time)</summary>
+        public float LastDriverSteerTime { get; private set; }
 
         Rigidbody _rb;
         Vector3 _prevVel;
         bool _hasPrev;
         float _kbHold;
+        float _humanSw;
         bool _initialized;
 
         // 바퀴 비주얼 보정값 (외부 모델의 피벗/축 방향이 제각각이므로)
@@ -227,6 +242,8 @@ namespace CapstoneSim
                 float tgt = Mathf.Clamp(extSteerWheelDeg, -lockNow, lockNow);
                 float e = Mathf.Lerp(SteeringWheelDeg, tgt, 1f - Mathf.Exp(-dt / 0.05f));
                 SteeringWheelDeg = Mathf.MoveTowards(SteeringWheelDeg, e, maxSteerRate * dt);
+                _humanSw = SteeringWheelDeg; AssistWheelDeg = 0f;
+                LastDriverSteerTime = Time.time;
                 return;
             }
 
@@ -243,7 +260,8 @@ namespace CapstoneSim
             }
             ActiveSteerSource = src;
 
-            float sw = SteeringWheelDeg;
+            float sw = _humanSw;
+            float before = _humanSw;
             switch (src)
             {
                 case SteerMode.Keyboard:
@@ -278,9 +296,20 @@ namespace CapstoneSim
                     break;
                 }
             }
-            // 핸들 회전 속도 제한 + 범위 제한
-            sw = Mathf.MoveTowards(SteeringWheelDeg, sw, maxSteerRate * dt);
-            SteeringWheelDeg = Mathf.Clamp(sw, -steeringLockDeg, steeringLockDeg);
+            // 핸들 회전 속도 제한 + 범위 제한 (운전자 핸들각)
+            sw = Mathf.MoveTowards(_humanSw, sw, maxSteerRate * dt);
+            _humanSw = Mathf.Clamp(sw, -steeringLockDeg, steeringLockDeg);
+            // 운전자가 핸들을 만졌는지: 키를 누르고 있거나 핸들각이 3°/s 이상 움직임 (키보드 손 뗌 복원은 제외)
+            if (kb != 0f || (src != SteerMode.Keyboard && Mathf.Abs(_humanSw - before) > 3f * dt))
+                LastDriverSteerTime = Time.time;
+
+            // 조향 보조 보정각 (상한 있음)
+            float assist = 0f;
+            if (assistGain > 0f && assistCapDeg > 0f)
+                assist = Mathf.Clamp(assistGain * assistTargetDeg, -assistCapDeg, assistCapDeg);
+            AssistWheelDeg = Mathf.MoveTowards(AssistWheelDeg, assist, maxSteerRate * 0.25f * dt);
+            float final = Mathf.Clamp(_humanSw + AssistWheelDeg, -steeringLockDeg, steeringLockDeg);
+            SteeringWheelDeg = Mathf.MoveTowards(SteeringWheelDeg, final, maxSteerRate * dt);
         }
 
         /// <summary>데드존 + expo 커브: 중앙 부근은 둔하게, 끝으로 갈수록 민감하게</summary>
@@ -384,7 +413,7 @@ namespace CapstoneSim
             _rb.position = pos; _rb.rotation = rot;
             transform.SetPositionAndRotation(pos, rot);
             ThrottleInput = BrakeInput = 0f;
-            SteeringWheelDeg = 0f;
+            SteeringWheelDeg = 0f; _humanSw = 0f; AssistWheelDeg = 0f;
             _hasPrev = false; LongAccel = LatAccel = 0f;
             foreach (var w in Wheels)
                 if (w) { w.motorTorque = 0f; w.brakeTorque = maxBrakeTorque; }

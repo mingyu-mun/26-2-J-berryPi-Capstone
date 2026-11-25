@@ -9,7 +9,11 @@ server.py — Unity 시뮬레이터 ↔ J_Berry PI 실제 모델(S1-EP + 상태 
 
 규약(WEBBOARD_DATA_CONTRACT v1.2) 지키는 점
   · 생체 출처 bio_origin = "recorded" (기록 재생) 또는 "live" (실측 모드), CAN 출처 can_origin = "simulated" (시뮬레이터 합성)
-  · can_drowsy 는 검증된 규칙이 없으므로 항상 null. 상태는 StateMachineV2.step 출력만 쓴다 (UI 가 따로 판정하지 않음)
+  · can_drowsy 는 저장소 규칙 vehicle_warning_sim_v1 (src/driver_state/can_assist.py) 로 만든다 (2026-11-26):
+    10초 창 안에 Unity 차선 이탈 경고(LaneSafe_indi=5, 방향지시등 구간 제외) 또는 부주의 경고(Careless_Warn≥2)가
+    있으면 True. Unity 가 경고 상태 코드를 보내지 않으면(구버전) 이전과 같이 null.
+    차량 경고는 졸음 정답이 아니라 보조 입력이다. 상태는 StateMachineV2.step 출력만 쓴다 (UI 가 따로 판정하지 않음)
+  · 받은 CAN 은 SimLogs/ai/can_<세션>.jsonl 에 저장소 --can-sim-scenario 형식으로도 남긴다
   · 값이 없으면 null (Unity 로 보내는 UI 패킷은 JsonUtility 제약 때문에 -1 + has_* 플래그로 표시)
 
 실행 (보통 Unity AiLink 가 .venv 의 python 으로 자동 실행):
@@ -34,6 +38,29 @@ sys.path.insert(0, str(HERE))
 
 from engine import REPO, StreamEngine  # noqa: E402
 from driver_state import webboard_connector as wb  # noqa: E402
+
+try:  # 저장소 main 의 can_assist.py + git_upload_ver1/steering_profile.py 가 repo/ 에 있어야 한다
+    from driver_state.can_assist import CODES as CAN_CODES, CanAssist, CanSample  # noqa: E402
+except Exception as _ex:  # 없으면 can_drowsy = null (이전 동작)
+    CanAssist = None
+    CAN_CODES = ("LaneSafe_indi", "Careless_Warn", "LTurnSig_Indi", "RTurnSig_Indi")
+    print(f"[server] can_assist 를 불러오지 못해 차량 경고 규칙 없이 실행: {_ex}", flush=True)
+
+
+class LiveCanSource:
+    """UDP 로 받은 CAN 표본을 CanAssist 에 흘려 넣는 반복자. 비면 StopIteration 이지만 다시 채우면 이어서 나온다."""
+
+    def __init__(self):
+        from collections import deque
+        self.q = deque()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if not self.q:
+            raise StopIteration
+        return self.q.popleft()
 
 LEVEL_NAME = {-1: "측정 불가", 0: "정상", 1: "주의", 2: "졸음"}
 
@@ -84,6 +111,12 @@ class Session:
         self.last_bio_rx = None
         self.last_can_rx = None
         self.can = {}                  # 최근 CAN 값 + 관측 시각
+        self.can_src = LiveCanSource()
+        self.assist = CanAssist(lambda: self.can_src, origin="simulated") if CanAssist else None
+        self.can_codes_seen = False    # Unity 가 경고 상태 코드를 보내는지
+        self.can_last_codes = {}
+        self.can_t0_us = None          # 시나리오 JSONL 의 0 초 (첫 CAN 표본)
+        self.confirmation = None
         self.hist = []                 # (t_end, p_used, level)
         self.last = None               # 최근 WindowResult
         self.last_conf_src = None
@@ -93,6 +126,7 @@ class Session:
         log_dir.mkdir(parents=True, exist_ok=True)
         self.ev = open(log_dir / f"events_{self.id}.jsonl", "w", encoding="utf-8")
         self.wc = open(log_dir / f"windows_{self.id}.csv", "w", encoding="utf-8")
+        self.cj = open(log_dir / f"can_{self.id}.jsonl", "w", encoding="utf-8")
         self.wc.write("t_start,t_end,replay_t_end,valid,valid_ppg,logit_ep,logit_ppg,p_ep,p_ppg,q_ecg,q_ppg,hr_ecg,hr_ppg,"
                       "level,level_name,candidate,score,p_used,confidence,channel,frozen,proc_ms\n")
         print(f"[server] 새 세션 {self.id}  mode={self.mode}  fs ecg={self.fs_ecg:.2f} ppg={self.fs_ppg:.2f}  "
@@ -103,7 +137,7 @@ class Session:
         return self.eng.duration() if self.eng else 0.0
 
     def close(self):
-        for f in (self.ev, self.wc):
+        for f in (self.ev, self.wc, self.cj):
             try:
                 f.close()
             except Exception:
@@ -173,6 +207,8 @@ class Server:
             s.eng.push("ecg", m.get("ecg") or [])
             s.eng.push("ppg", m.get("ppg") or [])
             s.last_bio_rx = time.time()
+            if s.eng.can_flag is None and s.assist is not None:
+                s.eng.can_flag = lambda end, s=s: self.can_flag(s, end)
         elif kind == "can":
             self.on_can(m)
 
@@ -237,6 +273,7 @@ class Server:
         if prev[0] is not None and s.can["steer"] is not None and t > prev[1]:
             rate = (s.can["steer"] - prev[0]) / (t - prev[1])
         turn = s.can["turn"]
+        rule = self.feed_assist(s, m, ts, off, t)
         payload = {
             "speed_kmh": s.can["speed"], "steering_angle_deg": s.can["steer"],
             "road_wheel_angle_deg": None, "steering_rate_deg_s": None if rate is None else round(rate, 1),
@@ -247,7 +284,59 @@ class Server:
                              "RTurnSig_Indi": 1 if turn > 0 else 0},
             "signal_times_s": {"speed": t, "steering": t, "accelerator": t, "brake": t},
         }
+        if rule is not None:   # 차량 경고 규칙 결과 (vehicle_warning_sim_v1)
+            payload.update(can_drowsy=rule["can_drowsy"], rule_id=rule["rule_id"], signal_map_id=rule["signal_map_id"])
+            payload["status_codes"].update(rule["status_codes"])
+            payload["status_signal_times_s"] = rule["status_signal_times_s"]
         self.emit(wb.envelope("can.telemetry", s.id, "simulated", t, payload))
+
+    def feed_assist(self, s, m: dict, ts, off: float, t: float):
+        """묶음의 표본을 하나씩 CanAssist 에 넣고 (시나리오 JSONL 에도 기록), 지금 시각의 판정 페이로드를 돌려준다."""
+        cols = {"LaneSafe_indi": m.get("lane_safe") or [], "Careless_Warn": m.get("careless") or [],
+                "LTurnSig_Indi": m.get("lturn") or [], "RTurnSig_Indi": m.get("rturn") or []}
+        has_codes = all(len(v) == len(ts) for v in cols.values())
+        s.can_codes_seen = s.can_codes_seen or has_codes
+        spd, st = m.get("speed") or [], m.get("steer") or []
+        for i, ti in enumerate(ts):
+            t_us = round((float(ti) + off) * 1_000_000)
+            codes = {k: int(v[i]) for k, v in cols.items()} if has_codes else {}
+            speed = float(spd[i]) if i < len(spd) else None
+            steer = float(st[i]) if i < len(st) else None
+            if s.assist is not None:
+                s.can_src.q.append(CanSample(t_us, speed, steer, codes, has_speed=speed is not None,
+                                             has_steer=steer is not None))
+            # 저장소 --can-sim-scenario 형식: t_us(첫 표본 0), 속도·조향 매 표본, 상태 코드는 바뀐 것만
+            if s.can_t0_us is None:
+                s.can_t0_us = t_us
+            row = {"t_us": t_us - s.can_t0_us}
+            if speed is not None:
+                row["speed_kmh"] = round(speed, 2)
+            if steer is not None:
+                row["steering_deg"] = round(steer, 2)
+            row.update({k: v for k, v in codes.items() if s.can_last_codes.get(k) != v})
+            s.can_last_codes.update(codes)
+            s.cj.write(json.dumps(row) + "\n")
+        if s.assist is None or not s.can_codes_seen:
+            return None
+        s.assist.last_emit_us = -10 ** 15          # 패킷마다(10 Hz) 페이로드를 받는다
+        return s.assist.advance(t)
+
+    def can_flag(self, s, end: float):
+        """판정 창 (end−10 s, end] 의 can_drowsy. 경고 상태 코드를 받은 적이 없으면 None (이전 동작)."""
+        if s.assist is None or not s.can_codes_seen:
+            return None
+        now = s.can.get("t")
+        if now is None:
+            return None
+        # CanAssist 는 최근 30 s 만 보관한다. exact 모드처럼 창이 늦게 판정되면 지금 시각 기준 10 s 를 쓴다.
+        return s.assist.window_flag(end if now - end <= 20.0 else now)
+
+    def can_reason(self, s, end: float):
+        if s.assist is None or not s.can_codes_seen or s.can.get("t") is None:
+            return ""
+        names = {"lane": "차선 경고", "careless": "부주의 경고", "lane_suppressed": "차선 경고(방향지시등·제외)",
+                 "steering": "조향 이탈", "steering_suppressed": "조향 이탈(방향지시등·제외)"}
+        return " · ".join(names.get(k, k) for k in s.assist.window_reasons(end))
 
     # ------------------------------------------------------------ 판정
     def on_window(self, r):
@@ -259,8 +348,14 @@ class Server:
         s.hist.append((r.t_end, -1.0 if p_used is None else float(p_used), int(st.level)))
         s.hist = s.hist[-120:]
         bstat = "ready" if s.eng.baseline_ready else s.eng.base_status
+        # 졸음(2)에 처음 오른 창의 CAN 판정이 True 면 'can', 아니면 'persistence' (pi_runtime 과 같은 규칙)
+        if bstat != "ready" or int(st.level) != 2:
+            s.confirmation = None
+        elif s.confirmation is None:
+            s.confirmation = "can" if r.win_in.can_drowsy is True else "persistence"
         ev = wb.ai_decision(s.id, r.win_in, st, baseline_status=bstat, bio_origin=s.origin,
-                            can_origin="simulated" if s.last_can_rx else "unavailable")
+                            can_origin="simulated" if s.last_can_rx else "unavailable",
+                            confirmation_source=s.confirmation)
         s.last_conf_src = ev["payload"].get("confirmation_source")
         self.emit(ev)
         w = r.win_in
@@ -272,7 +367,7 @@ class Server:
             st.channel, int(st.frozen), round(r.proc_ms, 1)]) + "\n")
         s.wc.flush()
         print(f"[win] t={r.t_end:7.1f}s replay={rep:7.1f}s lv={st.level}({st.level_name}) cand={int(st.candidate)} "
-              f"p={r3(st.p_used)} ch={st.channel} q={r3(w.q_ecg, 2)} hr={r3(w.hr_ecg, 1)} {r.proc_ms:.0f}ms", flush=True)
+              f"p={r3(st.p_used)} ch={st.channel} q={r3(w.q_ecg, 2)} hr={r3(w.hr_ecg, 1)} can={w.can_drowsy} {r.proc_ms:.0f}ms", flush=True)
 
     # ------------------------------------------------------------ Unity 로 보낼 화면 패킷
     def ui_packet(self, wave: bool) -> dict:
@@ -293,6 +388,10 @@ class Server:
                   base_b=r3(e.base_range[1] if e.base_range else None, 1),
                   n_windows=s.n_windows, ecg_rx=bool(s.last_bio_rx and time.time() - s.last_bio_rx < 3),
                   can_rx=bool(s.last_can_rx and time.time() - s.last_can_rx < 2))
+        now_t = s.can.get("t")
+        if now_t is not None and s.can_codes_seen:
+            f = self.can_flag(s, now_t)
+            pk.update(can_flag=-1 if f is None else int(f), can_reason=self.can_reason(s, now_t))
         r = s.last
         if r is not None:
             st, w = r.step, r.win_in

@@ -2,6 +2,7 @@
 // 주행 계기판 (SimTheme 디자인, 배치는 HudLayout).
 //   왼쪽 아래: 속도·기어·RPM·차로·깜빡이 + 핸들   /   그 위: 주행 기록(REC) 상태
 //   맨 아래 오른쪽: 조작키   /   위 가운데: 동기화 마커(M) 플래시 (영상과 로그를 맞추는 기준점, HUD 를 꺼도 표시)
+//   위 가운데(AI 배너 아래): 차량 경고 (차선 이탈 / 부주의)   /   REC 위: 조향 보조·차선 이탈 경고 상태
 using UnityEngine;
 
 namespace CapstoneSim
@@ -34,6 +35,8 @@ namespace CapstoneSim
             {
                 DrawCluster(W, H);
                 DrawRec();
+                DrawAdasStatus();
+                DrawVehicleWarnings(W);
                 if (showHelp) DrawHelp(W);
             }
             SimTheme.End(m);
@@ -111,8 +114,8 @@ namespace CapstoneSim
 
         void DrawHelp(float W)
         {
-            string[] keys = { "W/↑", "S/↓", "A·D", "L", "M", "Q/E", "R", "C", "T", "H", "Esc" };
-            string[] acts = { "가속", "브레이크", "조향", "기록", "마커", "깜빡이", "복귀", "시점", "조향 방식", "HUD", "메뉴" };
+            string[] keys = { "W/↑", "S/↓", "A·D", "L", "M", "Q/E", "G", "K", "R", "C", "T", "H", "Esc" };
+            string[] acts = { "가속", "브레이크", "조향", "기록", "마커", "깜빡이", "조향 보조", "부주의 시연", "복귀", "시점", "조향 방식", "HUD", "메뉴" };
             float y = HudLayout.HelpY, h = HudLayout.HelpH, total = 0f;
             for (int i = 0; i < keys.Length; i++) total += SimTheme.DisplayWidth(acts[i], 13) + SimTheme.TextWidth(keys[i], 12, true) + 16 + 6 + 18;
             float x = W - HudLayout.M - total + 18;
@@ -127,6 +130,67 @@ namespace CapstoneSim
                 x += kw + 6;
                 SimTheme.Display(new Rect(x, y, aw + 8, h), acts[i], 13, SimTheme.Text, TextAnchor.MiddleLeft, 1.2f);
                 x += aw + 18;
+            }
+        }
+
+        // ---------------------------------------------------------------- 운전 보조 · 차량 경고
+        void DrawAdasStatus()
+        {
+            if (!sim || !sim.Assist || !sim.Warnings) return;
+            var a = sim.Assist; var w = sim.Warnings;
+            float y = HudLayout.ClusterY - 46 - 42, x = HudLayout.M;
+            var r = new Rect(x, y, HudLayout.ClusterW, 34);
+            SimTheme.Panel(r, 8f, 0.8f);
+            // 조향 보조
+            string an = "조향 보조 " + DriverAssist.LevelName(a.level);
+            Color ac = a.level == AssistLevel.Off ? SimTheme.Dim : a.Engaged ? SimTheme.Accent : SimTheme.Amber;
+            float cw = SimTheme.TextWidth(an, 14, true) + 20;
+            SimTheme.Chip(new Rect(r.x + 8, r.y + 5, cw, 24), an, ac, a.Engaged);
+            float nx = r.x + 16 + cw;
+            if (a.level != AssistLevel.Off && !a.Engaged && a.Reason != "")
+            {
+                SimTheme.Label(new Rect(nx, r.y, 90, r.height), a.Reason, 13, SimTheme.Sub, true);
+                nx += SimTheme.TextWidth(a.Reason, 13, true) + 12;
+            }
+            // 차선 이탈 경고 (LDW) 상태
+            string ln = w.LaneSafeIndi == 5 ? "차선 이탈!" : w.LaneSafeIndi == 4 ? "차선 이탈 경고 켜짐" : "차선 이탈 경고 대기";
+            Color lc = w.LaneSafeIndi == 5 ? SimTheme.Red : w.LaneSafeIndi == 4 ? SimTheme.Green : SimTheme.Dim;
+            float lw = SimTheme.TextWidth(ln, 14, true) + 20;
+            SimTheme.Chip(new Rect(nx, r.y + 5, lw, 24), ln, lc, w.LaneSafeIndi == 5);
+            // 핸들 조작 없음 시간 (10초 넘으면 표시)
+            if (w.HandsOffSec >= 10f)
+                SimTheme.Label(new Rect(r.xMax - 120, r.y, 112, r.height), $"손 뗌 {w.HandsOffSec:0}초", 13,
+                    w.HandsOffSec >= w.handsOff2 ? SimTheme.Amber : SimTheme.Sub, true, TextAnchor.MiddleRight);
+        }
+
+        void DrawVehicleWarnings(float W)
+        {
+            if (!sim || !sim.Warnings) return;
+            var w = sim.Warnings;
+            float bw = 600f, x = W * 0.5f - bw * 0.5f, y = HudLayout.M + 76 + 12;
+            if (w.LaneWarning)
+            {
+                float pulse = 0.75f + 0.25f * Mathf.Sin(Time.realtimeSinceStartup * 12f);
+                var r = new Rect(x, y, bw, 66);
+                SimTheme.Panel(r);
+                SimTheme.Fill(new Rect(r.x + 2, r.y + 2, r.width - 4, r.height - 4), SimTheme.A(SimTheme.Red, 0.25f * pulse), 8f);
+                SimTheme.Plate(new Rect(r.x + 12, r.y + 11, 132, 44), "차선 이탈", SimTheme.Red, 22);
+                string side = w.LaneWarnSide < 0 ? "◀ 왼쪽" : "오른쪽 ▶";
+                SimTheme.Display(new Rect(r.x + 160, r.y, r.width - 170, r.height), $"{side} 차선을 밟았습니다", 22, SimTheme.Text);
+                y += 66 + 8;
+            }
+            int c = w.CarelessWarn;
+            if (c >= 1)
+            {
+                bool blink = c >= 2 && !Blink();
+                Color col = c >= 3 ? SimTheme.Red : SimTheme.Amber;
+                var r = new Rect(x, y, bw, c >= 2 ? 66 : 48);
+                SimTheme.Panel(r);
+                if (c >= 2) SimTheme.Fill(new Rect(r.x + 2, r.y + 2, r.width - 4, r.height - 4), SimTheme.A(col, blink ? 0.12f : 0.28f), 8f);
+                SimTheme.Plate(new Rect(r.x + 12, r.y + (r.height - 40) * 0.5f, 132, 40), "부주의", col, 21);
+                string msg = c >= 3 ? "휴식이 필요합니다" : c == 2 ? "전방을 주시하세요" : "핸들을 잡아 주세요";
+                if (!string.IsNullOrEmpty(w.CarelessReason)) msg += $"  ({w.CarelessReason})";
+                SimTheme.Display(new Rect(r.x + 160, r.y, r.width - 170, r.height), msg, c >= 2 ? 21 : 18, SimTheme.Text);
             }
         }
 

@@ -3,6 +3,9 @@
 //   - drive_<참가자>_<시각>.csv        : 주행 신호 (CAN 유사 신호 + 차선 기준 지표)
 //   - drive_<참가자>_<시각>_events.csv : 기록 시작/정지, 동기화 마커, 깜빡이, 리셋, 랩 등 이벤트
 //   - drive_<참가자>_<시각>_meta.json  : 세션 정보 (시작 시각, 샘플링 주기, 트랙 정보 등)
+//   - drive_<참가자>_<시각>_can.jsonl  : 저장소 --can-sim-scenario 형식 CAN (속도·핸들각 + 차량 경고 상태 코드)
+//       {"t_us":0,"speed_kmh":..,"steering_deg":..,"LaneSafe_indi":4,"Careless_Warn":0,"LTurnSig_Indi":0,"RTurnSig_Indi":0}
+//       첫 줄에 상태 코드 네 개를 모두 넣고, 이후에는 바뀐 코드만 넣는다 (web/dashboard/README.md 'Unity 출력 형식')
 //
 // [시간 컬럼 두 개를 남기는 이유]
 //   t_s          : 시뮬레이션(물리) 시간. 간격이 정확히 1/rate 로 균일 → 신호처리용.
@@ -33,6 +36,7 @@ namespace CapstoneSim
         public TrackBuilder track;
         [Tooltip("있으면 AI 판정·생체 replay 위치도 함께 기록")] public AiLink ai;
         public BioSource bio;
+        [Tooltip("차선 이탈·부주의 경고, 방향지시등 상태 코드")] public VehicleWarnings warnings;
 
         public bool IsRecording { get; private set; }
         public string CurrentFile { get; private set; } = "";
@@ -47,9 +51,10 @@ namespace CapstoneSim
             "wall_unix_ms,t_s,sample,speed_kmh,accel_pedal,brake_pedal,steer_input,steering_wheel_deg,wheel_angle_deg," +
             "yaw_rate_dps,long_accel_mps2,lat_accel_mps2,engine_rpm,gear,turn_signal," +
             "track_s_m,lap,lane,lateral_pos_m,lane_offset_m,heading_error_deg,road_curvature,lane_departure,marker," +
-            "ai_level,ai_p_used,bio_replay_t_s";
+            "ai_level,ai_p_used,bio_replay_t_s,lane_safe_indi,careless_warn,assist_wheel_deg";
 
-        StreamWriter _w, _ev;
+        StreamWriter _w, _ev, _can;
+        readonly int[] _lastCodes = new int[4];
         string _base;
         long _startUnixMs;
         string _startLocal;
@@ -109,6 +114,8 @@ namespace CapstoneSim
             _w = new StreamWriter(CurrentFile, false, enc, 1 << 16);
             _ev = new StreamWriter(_base + "_events.csv", false, enc);
             _w.WriteLine(Header);
+            _can = new StreamWriter(_base + "_can.jsonl", false, enc, 1 << 16);
+            for (int i = 0; i < 4; i++) _lastCodes[i] = int.MinValue;
             _ev.WriteLine("wall_unix_ms,t_s,event,value");
 
             _startUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -130,6 +137,7 @@ namespace CapstoneSim
             long endMs = WallMs();
             _w.Flush(); _w.Dispose(); _w = null;
             _ev.Flush(); _ev.Dispose(); _ev = null;
+            _can.Flush(); _can.Dispose(); _can = null;
 
             var meta = new SessionMeta
             {
@@ -229,12 +237,38 @@ namespace CapstoneSim
             bool aiLive = ai && ai.Connected && ai.Latest != null && ai.Latest.has_out;
             _sb.Append((aiLive ? ai.Latest.level : -9).ToString(Inv)).Append(',');
             F(aiLive ? ai.Latest.p_used : -1f, "F3");
-            _sb.Append(bio && bio.Loaded ? bio.FileTimeSec.ToString("F3", Inv) : "-1");
+            _sb.Append(bio && bio.Loaded ? bio.FileTimeSec.ToString("F3", Inv) : "-1").Append(',');
+            _sb.Append(warnings ? warnings.LaneSafeIndi.ToString(Inv) : "-1").Append(',');
+            _sb.Append(warnings ? warnings.CarelessWarn.ToString(Inv) : "-1").Append(',');
+            _sb.Append(car.AssistWheelDeg.ToString("F2", Inv));
             _w.WriteLine(_sb.ToString());
+            WriteCan(Time.fixedTimeAsDouble - _t0);
             _pendingMarker = 0;
             SampleCount++;
 
             if (Time.realtimeSinceStartup - _lastFlush > 1f) { _w.Flush(); _lastFlush = Time.realtimeSinceStartup; }
+        }
+
+        static readonly string[] CodeNames = { "LaneSafe_indi", "Careless_Warn", "LTurnSig_Indi", "RTurnSig_Indi" };
+
+        void WriteCan(double t)
+        {
+            if (_can == null) return;
+            var b = new StringBuilder(160);
+            b.Append("{\"t_us\":").Append(Math.Round(t * 1e6).ToString("F0", Inv))
+             .Append(",\"speed_kmh\":").Append(Mathf.Abs(car.SpeedKmh).ToString("F2", Inv))
+             .Append(",\"steering_deg\":").Append(car.SteeringWheelDeg.ToString("F2", Inv));
+            if (warnings)
+            {
+                int[] v = { warnings.LaneSafeIndi, warnings.CarelessWarn, warnings.LTurnSigIndi, warnings.RTurnSigIndi };
+                for (int i = 0; i < 4; i++)
+                {
+                    if (v[i] == _lastCodes[i]) continue;
+                    b.Append(",\"").Append(CodeNames[i]).Append("\":").Append(v[i].ToString(Inv));
+                    _lastCodes[i] = v[i];
+                }
+            }
+            _can.WriteLine(b.Append('}').ToString());
         }
 
         void F(double v, string fmt) => _sb.Append(v.ToString(fmt, Inv)).Append(',');

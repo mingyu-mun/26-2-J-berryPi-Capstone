@@ -2,6 +2,7 @@
 // 시뮬레이터 ↔ J_Berry PI 실시간 추론 서버(Tools/jberry_ai/server.py) 연결.
 //   이 PC 에서 저장소 모델(S1-EP 학생 3개 평균 + 상태 머신 v2)을 CPU 로 돌린다.
 //   송신 (UDP → 5005): hello(1초마다), 실측 ECG/PPG 원신호(각자 원래 주기, 10 Hz 묶음), 차량 CAN 유사 신호(50 Hz → 10 Hz 묶음)
+//                      CAN 묶음에는 차량 경고 상태 코드(LaneSafe_indi·Careless_Warn·방향지시등)도 실린다 (VehicleWarnings)
 //   수신 (UDP ← 5006): 화면 패킷 'ui' (약 10 Hz) — 상태 머신 출력, 기준 수집 상태, 전처리 파형
 // 규약(웹보드 v1.2)에 맞춘 이벤트 기록은 서버가 SimLogs/ai/events_<세션>.jsonl 로 남긴다.
 // 'Auto Launch Server' 가 켜져 있으면 Play 때 Tools/jberry_ai/.venv 의 Python 으로 서버를 띄우고 Play 종료 때 끈다.
@@ -33,6 +34,9 @@ namespace CapstoneSim
         public bool has_out;
         public int level = -1;
         public string level_name = "", channel = "", confirmation_source = "";
+        // 서버의 차량 경고 판정 (vehicle_warning_sim_v1): 최근 10초 can_drowsy  1=있음 0=없음 -1=판정 불가, 원인
+        public int can_flag = -1;
+        public string can_reason = "";
         public bool candidate, frozen;
         public float score = -1, p_used = -1, confidence = -1, p_ep = -1, p_ppg = -1, q_ecg = -1, q_ppg = -1,
                      hr_ecg = -1, hr_ppg = -1, logit_ep = -1, win_end = -1, proc_ms = -1, out_age = -1,
@@ -69,6 +73,7 @@ namespace CapstoneSim
         public BioSource bio;
         public CarController car;
         public TrackBuilder track;
+        public VehicleWarnings warnings;
         public string participantId = "P01";
 
         public AiUi Latest { get; private set; }
@@ -94,7 +99,8 @@ namespace CapstoneSim
         // CAN 유사 신호 묶음 (FixedUpdate 에서 50 Hz 샘플)
         readonly List<float> _cT = new List<float>(), _cSpeed = new List<float>(), _cSteer = new List<float>(),
                              _cAcc = new List<float>(), _cBrk = new List<float>();
-        readonly List<int> _cGear = new List<int>(), _cTurn = new List<int>();
+        readonly List<int> _cGear = new List<int>(), _cTurn = new List<int>(),
+                           _cLane = new List<int>(), _cCareless = new List<int>(), _cLTurn = new List<int>(), _cRTurn = new List<int>();
         float _canAcc;
 
         [Serializable] class Hello
@@ -107,6 +113,8 @@ namespace CapstoneSim
         {
             public string type = "can";
             public float[] t, speed, steer, accel, brake; public int[] gear, turn;
+            // 회사 CAN 매핑 상태 코드 (Can list.xlsx): 차선안전 표시, 부주의 경고, 좌/우 방향지시등
+            public int[] lane_safe, careless, lturn, rturn;
         }
 
         public string ProjectRoot => SimPaths.Root;
@@ -284,6 +292,11 @@ namespace CapstoneSim
             _cBrk.Add(Mathf.Clamp01(car.BrakeInput));
             _cGear.Add(car.Gear < 0 ? 1 : car.Gear == 0 ? 2 : 3);   // Can list GearPosition: 0=P 1=R 2=N 3=D
             _cTurn.Add(car.TurnSignal);
+            if (warnings)
+            {
+                _cLane.Add(warnings.LaneSafeIndi); _cCareless.Add(warnings.CarelessWarn);
+                _cLTurn.Add(warnings.LTurnSigIndi); _cRTurn.Add(warnings.RTurnSigIndi);
+            }
         }
 
         void Update()
@@ -306,9 +319,14 @@ namespace CapstoneSim
                 Send(JsonUtility.ToJson(new CanPacket
                 {
                     t = _cT.ToArray(), speed = _cSpeed.ToArray(), steer = _cSteer.ToArray(), accel = _cAcc.ToArray(),
-                    brake = _cBrk.ToArray(), gear = _cGear.ToArray(), turn = _cTurn.ToArray()
+                    brake = _cBrk.ToArray(), gear = _cGear.ToArray(), turn = _cTurn.ToArray(),
+                    lane_safe = _cLane.Count == _cT.Count ? _cLane.ToArray() : null,
+                    careless = _cCareless.Count == _cT.Count ? _cCareless.ToArray() : null,
+                    lturn = _cLTurn.Count == _cT.Count ? _cLTurn.ToArray() : null,
+                    rturn = _cRTurn.Count == _cT.Count ? _cRTurn.ToArray() : null,
                 }));
                 _cT.Clear(); _cSpeed.Clear(); _cSteer.Clear(); _cAcc.Clear(); _cBrk.Clear(); _cGear.Clear(); _cTurn.Clear();
+                _cLane.Clear(); _cCareless.Clear(); _cLTurn.Clear(); _cRTurn.Clear();
             }
         }
 

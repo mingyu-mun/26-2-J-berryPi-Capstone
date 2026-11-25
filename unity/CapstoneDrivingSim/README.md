@@ -82,11 +82,27 @@ J_Berry PI 캡스톤 (On-Device AI 기반 운전자 상태 분석)용 **운전 �
 | A·D / ←→ | 왼쪽 스틱 | 조향 |
 | **L** | Start | **기록 시작 / 정지** |
 | **M** | A | **동기화 마커** (화면 우상단 흰 사각형이 0.3초 깜빡임) |
-| Q / E | LB / RB | 좌 / 우 깜빡이 (토글) |
+| Q / E | LB / RB | 좌 / 우 깜빡이 (토글, 차로 변경을 마치면 자동으로 꺼짐) |
+| **G** | X | **조향 보조 세기** (끔 → 약 → 강, 기본 강) |
+| K | | 부주의 경고 시연 (4초간 강제로 켬) |
 | R | Select | 차선 위로 복귀 (도로 이탈·전복 시) |
 | C | Y | 운전석 시점 ↔ 추적 시점 |
 | **T** | | **조향 방식 전환** (자동 → 키보드 → 마우스 → 게임패드) |
 | H | | HUD 표시 토글 |
+
+### 3-0. 운전 보조와 차량 경고 (2026-11-26)
+코너에서 차선 이탈이 불가피할 만큼 어려워서 **조향 보조**를 넣었고, 저장소 CAN 보조 확정 규칙(PR #16, `vehicle_warning_sim_v1`)이 쓰는 **차선 이탈 경고·부주의 경고·방향지시등**을 Unity 가 직접 만든다. 화면 위 가운데(AI 배너 아래)에 경고 배너, 계기판 위에 보조 상태가 보인다.
+
+| 기능 | 동작 | 회사 CAN 코드 |
+|---|---|---|
+| 조향 보조 (`DriverAssist.cs`) | 운전자 핸들각에 차로 중심 추종 조향(곡률 피드포워드 + 편차·헤딩 되먹임, `CarAutopilot` 과 같은 식)을 상한을 두고 더한다. **강**: 손을 떼도 코너를 돈다(보정 상한 핸들각 30°). **약**: 곡선 유지 정도만(상한 12°). 깜빡이를 켜면 차로 변경을 위해 잠시 꺼지고 30 km/h 미만·도로 밖에서는 동작 안 함 | — |
+| 차선 이탈 경고 (`VehicleWarnings.cs`) | 60 km/h 이상에서 차체가 차선을 밟으면(\|차로 편차\| > (3.5 − 차폭)/2) 경고음 + 배너. 깜빡이를 켰으면 경고 안 함. 최소 1초 유지 | `LaneSafe_indi` 3 비활성 / 4 활성 / **5 경고** |
+| 부주의 경고 | 핸들 조작 없이 15/25/40초 → 1/2/3단계, 최근 60초 차선 이탈 경고 2회 → 2, 3회 → 3, K 키 → 2 (4초). 2단계 이상은 최소 3초 유지 | `Careless_Warn` 0~3 |
+| 방향지시등 | Q/E 토글. 옆 차로로 옮겨 중심 ±0.6 m 에 1초 머물면 자동으로 끄고, 20초가 지나도 끈다. 딸깍 소리 | `LTurnSig_Indi`, `RTurnSig_Indi` 0/1 |
+
+- 조향 보조가 **강**이면 손을 떼고 달려도 차로를 지킨다. 이때는 '핸들 조작 없음' 부주의 경고가 15초부터 켜진다 (실차의 '핸들을 잡으세요'와 같은 성격). 졸음 시연에서 차선 이탈을 보여 주려면 **G 로 약/끔**으로 바꾸거나 보정 상한보다 크게 꺾는다.
+- 수치(세기별 이득·상한, 경고 기준)는 Play 중 `DrivingSim` 의 `DriverAssist`·`VehicleWarnings` Inspector 에서 바로 바꿀 수 있다.
+- 차량 경고는 **졸음 정답 라벨이 아니라 보조 입력**이다. 서버(상태 머신 v2)는 생체 판정이 '주의' 이상일 때만 이를 졸음 격상 근거로 쓴다.
 
 ### 3-1. 조향 방식 (v2)
 핸들 각도를 상태값으로 두고, 입력 장치마다 핸들을 돌리는 방식을 다르게 했다. 바퀴각 = 핸들각 ÷ 15.
@@ -145,7 +161,10 @@ J_Berry PI 캡스톤 (On-Device AI 기반 운전자 상태 분석)용 **운전 �
 drive_P01_20261117_143000.csv          주행 신호 (50 Hz)
 drive_P01_20261117_143000_events.csv   이벤트 (기록 시작/정지, 마커, 깜빡이, 리셋, 랩)
 drive_P01_20261117_143000_meta.json    세션 정보
+drive_P01_20261117_143000_can.jsonl    저장소 --can-sim-scenario 형식 CAN (속도·핸들각 50 Hz + 차량 경고 상태 코드)
 ```
+
+`_can.jsonl` 은 저장소에서 바로 쓸 수 있다: `python scripts/can_sim_scenario.py check drive_..._can.jsonl --verbose`, `python scripts/run_dashboard.py --can-sim-scenario drive_..._can.jsonl`. AI 세션(메뉴의 주행 시작)에서는 서버도 받은 CAN 을 `SimLogs/ai/can_<세션>.jsonl` 로 같은 형식으로 남긴다.
 
 ### 4-1. 주행 신호 컬럼
 | 컬럼 | 단위 | 설명 | 실차 CAN 대응 |
@@ -174,6 +193,9 @@ drive_P01_20261117_143000_meta.json    세션 정보
 | `road_curvature` | 1/m | 도로 곡률 (직선 0, 곡선 1/R) | LKAS 곡률 |
 | `lane_departure` | 0/1 | 차체가 차선을 밟음 (\|lane_offset\| > (3.5−1.8)/2 = 0.85 m) | LDW |
 | `marker` | | 그 순간 눌린 마커 번호 (평소 0) | |
+| `lane_safe_indi` | | 차선 이탈 경고 상태 (3 비활성 / 4 활성 / 5 경고) | LaneSafe_indi |
+| `careless_warn` | | 부주의 경고 단계 0~3 | Careless_Warn |
+| `assist_wheel_deg` | deg | 조향 보조가 더한 핸들각 (`steering_wheel_deg` 에 포함) | |
 
 - `engine_rpm`, `gear` 는 차량 동역학이 아니라 속도 구간으로 만든 **그럴듯한 모사값**이다. 모델 특징으로 쓰기 전에 팀에서 판단할 것.
 - 실제 차량 CAN에는 `lane_offset` 류 신호가 LKAS 장착 차량에만 있다. 시뮬에서는 정확히 계산되므로 **"실차에서 얻을 수 있는 신호"와 "시뮬 전용 신호"를 구분**해서 쓰는 것이 좋다.
@@ -251,7 +273,9 @@ python Tools/check_log.py SimLogs/drive_P01_20261117_143000.csv --sensor ppg.csv
 | `CarModelFitter.cs` | 외부 차량 프리팹 정리(스크립트·물리 제거), 크기·위치 보정, 바퀴·핸들 자동 인식 |
 | `ProceduralTextures.cs` | 아스팔트·잔디·HUD 핸들 아이콘 텍스처 생성 |
 | `SimInput.cs` | 키보드/마우스/게임패드 입력 (새 Input System + 구 Input Manager 겸용) |
-| `DrivingDataLogger.cs` | 50 Hz CSV + 이벤트 CSV + meta.json 기록 |
+| `DrivingDataLogger.cs` | 50 Hz CSV + 이벤트 CSV + meta.json + `_can.jsonl` 기록 |
+| `DriverAssist.cs` | 조향 보조 (차로 유지, G 키로 세기 전환) |
+| `VehicleWarnings.cs` | 차선 이탈 경고·부주의 경고·방향지시등 자동 해제 + 경고음, 회사 CAN 상태 코드 |
 | `FollowCamera.cs` | 운전석 1인칭 / 추적 3인칭 카메라 |
 | `SimHUD.cs` | 속도·기어·차로 편차·기록 상태·마커 플래시 표시 |
 | `Editor/CapstoneSimMenu.cs` | `Capstone` 메뉴 (씬 구성, 로그 폴더 열기) |

@@ -223,6 +223,32 @@ namespace CapstoneSim
 #endif
         }
 
+        /// <summary>G / 게임패드 X(West) : 조향 보조 세기 전환 (끔 → 약 → 강)</summary>
+        public static bool AssistTogglePressed()
+        {
+#if ENABLE_INPUT_SYSTEM
+            var kb = Keyboard.current; var gp = Gamepad.current;
+            return (kb != null && kb.gKey.wasPressedThisFrame) || (gp != null && gp.buttonWest.wasPressedThisFrame);
+#elif ENABLE_LEGACY_INPUT_MANAGER
+            return Input.GetKeyDown(KeyCode.G);
+#else
+            return false;
+#endif
+        }
+
+        /// <summary>K : 부주의 경고 시연 (몇 초간 강제로 켬)</summary>
+        public static bool CarelessDemoPressed()
+        {
+#if ENABLE_INPUT_SYSTEM
+            var kb = Keyboard.current;
+            return kb != null && kb.kKey.wasPressedThisFrame;
+#elif ENABLE_LEGACY_INPUT_MANAGER
+            return Input.GetKeyDown(KeyCode.K);
+#else
+            return false;
+#endif
+        }
+
         /// <summary>Esc / 게임패드 B : 뒤로 · 세션 메뉴</summary>
         public static bool BackPressed()
         {

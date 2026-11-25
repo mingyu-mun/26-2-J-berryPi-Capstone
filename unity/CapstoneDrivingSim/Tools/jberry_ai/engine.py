@@ -156,6 +156,8 @@ class StreamEngine:
         self.edge_margin = edge_margin            # 버퍼 끝 몇 초는 필터 가장자리라 판정에 안 씀
         self.cfg = V2Config()
         self.sm = StateMachineV2(self.cfg)
+        # 창 끝 시각 → can_drowsy (True/False/None). server.py 가 차량 경고 규칙(vehicle_warning_sim_v1)을 연결한다.
+        self.can_flag = None
         self.buf = {"ecg": [], "ppg": []}         # 받은 원신호 조각 목록
         self.n = {"ecg": 0, "ppg": 0}
         self._cat_cache = {"ecg": (0, np.zeros(0)), "ppg": (0, np.zeros(0))}
@@ -397,7 +399,7 @@ class StreamEngine:
         hr_e, hr_p = _f(row.get("hr_30")), _f(prow.get("hr_30"))
         w = WindowIn(t=t + 30, p_ep=sig(lg_ep) if valid else None, q_ecg=q_ecg,
                      p_ppg=sig(lg_ppg) if valid_ppg else None, q_ppg=q_ppg,
-                     hr_ecg=hr_e, hr_ppg=hr_p, can_drowsy=None)
+                     hr_ecg=hr_e, hr_ppg=hr_p, can_drowsy=self.can_flag(t + 30) if self.can_flag else None)
         st = self.sm.step(w)
         return WindowResult(t, t + 30, w, st, lg_ep, lg_ppg, valid, valid_ppg, (time.perf_counter() - t0) * 1000, zr[0])
 

@@ -61,6 +61,10 @@ namespace CapstoneSim
         [Tooltip("개인 기준(baseline) 측정 파일 세션 폴더. 비우면 재생 기록 앞부분에서 자동 수집")] public string baselineSessionDir = "";
         [Tooltip("Play 시 메인 메뉴부터 시작 (끄면 위 설정으로 바로 리플레이 주행)")] public bool showMainMenu = true;
 
+        [Header("운전 보조 · 차량 경고")]
+        [Tooltip("조향 보조 시작 세기 (주행 중 G 키로 끔 → 약 → 강)")] public AssistLevel assistLevel = AssistLevel.Strong;
+        [Tooltip("차선 이탈·부주의 경고음")] public bool warningSound = true;
+
         [Header("물리")]
         [Tooltip("물리 갱신 주기 [Hz]. 차량 안정성을 위해 100 Hz 권장")] public float physicsHz = 100f;
 
@@ -76,6 +80,8 @@ namespace CapstoneSim
         public BioSource Bio { get; private set; }
         public AiLink Ai { get; private set; }
         public SimHUD Hud { get; private set; }
+        public DriverAssist Assist { get; private set; }
+        public VehicleWarnings Warnings { get; private set; }
         public SimPanels Panels { get; private set; }
         public MainMenu Menu { get; private set; }
         public LiveBioSource Live { get; private set; }
@@ -197,6 +203,14 @@ namespace CapstoneSim
             Logger.car = Car;
             Logger.track = Track;
 
+            // ---------- 조향 보조 / 차량 경고 (차선 이탈·부주의·깜빡이) ----------
+            Assist = gameObject.AddComponent<DriverAssist>();
+            Assist.car = Car; Assist.track = Track; Assist.level = assistLevel;
+            Warnings = gameObject.AddComponent<VehicleWarnings>();
+            Warnings.car = Car; Warnings.track = Track; Warnings.logger = Logger; Warnings.assist = Assist;
+            Warnings.sound = warningSound;
+            Logger.warnings = Warnings;
+
             Hud = gameObject.AddComponent<SimHUD>();
             Hud.car = Car;
             Hud.logger = Logger;
@@ -288,6 +302,7 @@ namespace CapstoneSim
             Ai.baselineDir = c.baselineDir ?? "";
             Ai.webboardUrl = aiWebboardUrl;
             Ai.bio = Bio; Ai.car = Car; Ai.track = Track; Ai.participantId = Logger.participantId;
+            Ai.warnings = Warnings;
             AutoTestRunner.ApplyOverrides(Bio, Ai);   // 자동 테스트 중이면 재생 위치·모드·기준 파일 덮어쓰기
             Bio.Begin();
             Panels = gameObject.AddComponent<SimPanels>();
