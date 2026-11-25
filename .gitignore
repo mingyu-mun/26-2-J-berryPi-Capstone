@@ -26,6 +26,8 @@ __pycache__/
 *.py[cod]
 .venv/
 .venv-web/
+.venv-local/
+.venv-pi/
 venv/
 .pytest_cache/
 .mypy_cache/
@@ -49,3 +51,11 @@ outputs/
 # 직접 측정한 녹음 변환본·추론 결과 (커밋 금지)
 data/converted/
 out/
+
+# Pi별 장치 설정
+configs/pi-sensors.local.json
+tests/sensors.local.json
+tests/results/
+# 이전 설치의 로컬 설정·로그도 계속 제외
+pi-integration-test/sensors.local.json
+pi-integration-test/results/

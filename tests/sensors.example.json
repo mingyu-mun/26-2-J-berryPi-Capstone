@@ -1,0 +1,27 @@
+{
+  "serial": {
+    "port": "auto",
+    "baudrate": 115200,
+    "format": "csv",
+    "expected_fields": 2,
+    "columns": {"value": 0},
+    "clock": "sample_count",
+    "fs_hz": 435.276,
+    "adc_max": 1023,
+    "vref_mv": 5000.0,
+    "gap_s": 0.2,
+    "reset_wait_s": 2.0
+  },
+  "ppg": {
+    "bus": 1,
+    "address": 87,
+    "fs_hz": 100,
+    "led_current": 36,
+    "finger_threshold": 25000
+  },
+  "inference": {
+    "feature_mode": "causal_trailing_v1",
+    "experimental": true,
+    "threads": 1
+  }
+}

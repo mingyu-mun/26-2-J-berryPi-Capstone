@@ -1,104 +1,117 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark">
-  <title>J_BERRY PI | 운전자 모니터</title>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="dark">
+  <title>J_BERRY PI</title>
   <link rel="stylesheet" href="styles.css">
-  <script src="contract-validator.js" defer></script>
-  <script src="webboard-state.js" defer></script>
-  <script src="app.js" defer></script>
+  <script src="contract-validator.js" defer></script><script src="webboard-state.js" defer></script><script src="app.js" defer></script>
 </head>
 <body>
 <div class="dashboard">
   <header class="topbar">
-    <a class="wordmark" href="#" aria-label="J Berry PI 계기판">J<span class="brand-dot">.</span>BERRY <span class="brand-pi">PI</span></a>
-    <div class="topbar-right">
-      <span class="transport"><i id="transportDot" class="dot"></i><span id="transportLabel">연결 대기</span></span>
-      <time id="wallClock" class="wall-clock"></time>
-      <button id="settingsButton" class="icon-button" type="button" aria-label="데이터 연결 설정" aria-haspopup="dialog">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16M8 4v6M16 14v6"/></svg>
-      </button>
-    </div>
+    <a class="wordmark" href="#">J<span class="brand-dot">.</span>BERRY <span class="brand-pi">PI</span></a>
+    <div class="topbar-right"><span class="transport"><i id="transportDot" class="dot"></i><span id="transportLabel">연결 대기</span></span><time id="wallClock"></time></div>
+    <nav class="top-menu" aria-label="측정 관리">
+      <button id="setupButton" class="button primary">사용자 설정·시작</button>
+      <details id="toolsMenu" class="tools-menu"><summary class="button">보조 도구</summary><div class="tools-popover"><button id="resultsMenuButton" class="button">저장 결과 JSON 보기</button><p>과거 결과 재생 · 모델 재실행 없음</p></div></details>
+    </nav>
   </header>
-
   <main>
-    <div class="section-head"><h1>운전자 모니터</h1><div class="source-labels"><span id="viewSource">입력 대기</span><span id="bioSource">생체 미수신</span><span id="canSource">차량 미수신</span><span id="decisionSource" data-origin="simulated" hidden>판정 참조: 차량 시뮬레이션</span></div></div>
-    <section class="cluster" aria-label="운전자 계기판">
+    <details id="replayPanel" class="replay-panel" open>
+      <summary><span class="panel-label">설정·재생 제어</span><span class="replay-summary"><span id="summaryUser">사용자 미선택</span><span id="summaryProfile">기준 미적용</span><span id="summaryRecording">기록 미선택</span><span id="summaryPlayback">대기</span></span><span id="foldLabel" class="fold-label">접기</span></summary>
+      <div class="replay-panel-body">
+    <dl class="workspace" aria-label="현재 시험 대상">
+      <div><dt>사용자</dt><dd id="activeUser">선택 없음</dd></div><div><dt>적용 기준</dt><dd id="activeProfile">적용 없음</dd></div>
+      <div><dt>입력 기록</dt><dd id="activeRecording">선택 없음</dd></div><div><dt>재생 상태</dt><dd id="activePlayback">대기</dd></div>
+    </dl>
+    <section id="localControls" class="playback-toolbar" aria-label="원본 재생 제어">
+      <div class="playback-actions"><button id="localPlay" class="button primary" disabled>재생</button><button id="localRewind" class="button" disabled>처음으로</button><button id="localStop" class="button" disabled>종료</button></div>
+      <div class="playback-progress"><progress id="localProgress" max="100" value="0" aria-label="기록 처리 진행률"></progress><span id="localPosition">원본 기록을 선택하세요.</span></div>
+    </section>
+    <p id="localControlsHint" class="field-help"></p>
+    <section id="resultReplayBar" class="playback-toolbar" aria-label="저장 결과 보기" hidden>
+      <div class="playback-actions"><button id="playFile" class="button primary" disabled>재생</button><button id="stepFile" class="button" disabled>다음 데이터</button><button id="rewindFile" class="button" disabled>처음으로</button><button id="backToLocal" class="button">원본 재생 화면으로</button></div><span id="replayPosition">기록이 없습니다.</span>
+    </section>
+      </div>
+    </details>
+    <p id="mainNotice" class="notice" role="status" aria-live="polite"></p>
+    <section class="cluster" aria-label="심박수와 운전자 상태">
       <div class="instrument heart-instrument">
-        <div class="instrument-label">심박수 <span class="detail-label">ECG</span></div>
+        <div class="instrument-label">심박수 <span>ECG</span></div>
         <div class="dial">
-          <svg id="heartDial" class="dial-svg" viewBox="0 0 280 245" role="img" aria-label="심박수 눈금">
-            <path class="dial-track" d="M 63.63 216.37 A 108 108 0 1 1 216.37 216.37"/>
-            <g class="dial-ticks"></g><path class="dial-value" pathLength="100" d="M 63.63 216.37 A 108 108 0 1 1 216.37 216.37" hidden/>
+          <svg id="heartDial" class="dial-svg" viewBox="0 0 280 245" role="img" aria-label="심박수 눈금" aria-describedby="heartBandBasis heartBandComparison">
+            <path class="heart-reference-track" d="M 55.15 224.85 A 120 120 0 1 1 224.85 224.85"/><g id="heartReferenceBand" hidden></g><line id="heartReferenceMark" class="heart-reference-mark" hidden/><circle id="heartCurrentMark" class="heart-current-mark" r="5" hidden/>
+            <path class="dial-track" d="M 63.63 216.37 A 108 108 0 1 1 216.37 216.37"/><g class="dial-ticks"></g><path class="dial-value" pathLength="100" d="M 63.63 216.37 A 108 108 0 1 1 216.37 216.37" hidden/>
           </svg>
           <div class="dial-reading"><strong id="ecgHr">··</strong><span>BPM</span></div>
         </div>
         <div class="secondary-reading"><span>PPG 맥박수</span><strong><span id="ppgHr">··</span><small> BPM</small></strong></div>
+        <div class="heart-reference-info"><div class="heart-reference-reading"><span id="heartReferenceText">기준 평균 수신 대기</span><strong id="heartDelta">··</strong></div><div id="heartBandLegend" class="heart-band-legend" hidden><span>기준 근접</span><span>편차 증가</span><span>큰 편차</span></div><p id="heartBandBasis" hidden></p></div>
       </div>
-
       <div id="stateModule" class="driver-state" data-state="waiting">
         <div class="state-orbit" aria-hidden="true"><svg viewBox="0 0 84 84"><circle cx="42" cy="42" r="34"/><path d="M24 43h10l5-13 8 25 5-12h8"/></svg></div>
-        <p class="state-caption">현재 운전자 상태</p>
-        <h2 id="driverState" class="state-title" aria-live="polite">데이터 수신 대기</h2>
-        <p id="stateDescription" class="state-description">연결된 데이터가 없습니다.</p>
-        <div class="connection-strip" aria-label="데이터 연결 상태">
-          <span><i id="ecgDot" class="dot"></i>ECG <b id="ecgConnection">대기</b></span>
-          <span><i id="ppgDot" class="dot"></i>PPG <b id="ppgConnection">대기</b></span>
-          <span><i id="canDot" class="dot"></i>CAN <b id="canConnection">대기</b></span>
-        </div>
+        <p class="state-caption">현재 운전자 상태</p><h2 id="driverState" class="state-title" aria-live="polite">판정 대기</h2>
+        <p id="stateDescription" class="state-description" hidden></p>
+        <div class="baseline-progress"><span id="baselinePhase">기준을 선택하거나 새로 측정하세요.</span><span id="inputState">입력 대기</span></div>
         <span id="measurementTime" class="measurement-time">측정 시각 미수신</span>
       </div>
-
-      <div class="instrument speed-instrument">
-        <div class="instrument-label">차량 속력 <span id="speedFreshness" class="detail-label">미수신</span></div>
-        <div class="dial">
-          <svg id="speedDial" class="dial-svg" viewBox="0 0 280 245" role="img" aria-label="차량 속력 눈금">
-            <path class="dial-track" d="M 63.63 216.37 A 108 108 0 1 1 216.37 216.37"/>
-            <g class="dial-ticks"></g><path class="dial-value" pathLength="100" d="M 63.63 216.37 A 108 108 0 1 1 216.37 216.37" hidden/>
-          </svg>
-          <div class="dial-reading"><strong id="speedValue">··</strong><span>km/h</span></div>
-        </div>
-        <div class="secondary-reading"><span>핸들 조향각</span><strong><span id="steeringValue">··</span><small> °</small></strong></div>
-      </div>
     </section>
-
-    <section class="baseline-strip" aria-label="개인 기준 수집 현황">
-      <div class="baseline-item"><div class="baseline-top"><h3>생체 기준</h3><span id="bioBaselineText">수신 대기</span></div><div class="baseline-track"><span id="bioBaselineFill" hidden></span></div><p id="bioBaselineDetail">개인 기준 수집 정보가 없습니다.</p></div>
-      <div class="baseline-item"><div class="baseline-top"><h3>주행 기준</h3><span id="canBaselineText">수신 대기</span></div><div class="baseline-track"><span id="canBaselineFill" hidden></span></div><p id="canBaselineDetail">차량 데이터 연결을 기다리고 있습니다.</p></div>
+    <section class="signal-section" aria-label="실제 생체 파형">
+      <article class="signal-panel"><div class="signal-heading"><h3><span class="trace-mark"></span>ECG <span>심전도</span></h3><span id="ecgMeta">미수신</span></div><div class="wave-viewport"><canvas id="ecgWave" width="900" height="180" aria-label="수신한 ECG 파형"></canvas><p id="ecgEmpty" class="wave-empty">전처리 파형 수신 대기</p></div></article>
+      <article class="signal-panel"><div class="signal-heading"><h3><span class="trace-mark secondary"></span>PPG <span>맥파</span></h3><span id="ppgMeta">미수신</span></div><div class="wave-viewport"><canvas id="ppgWave" width="900" height="180" aria-label="수신한 PPG 파형"></canvas><p id="ppgEmpty" class="wave-empty">전처리 파형 수신 대기</p></div></article>
     </section>
-
-    <section class="signal-section" aria-label="실제 생체신호">
-      <article class="signal-panel"><div class="signal-heading"><h3><span class="trace-mark"></span>ECG <span>심전도</span></h3><span id="ecgMeta" class="signal-meta">미수신</span></div><div class="wave-viewport"><canvas id="ecgWave" width="900" height="160" aria-label="수신한 ECG 파형"></canvas><p id="ecgEmpty" class="wave-empty">전처리 파형 수신 대기</p></div><div class="wave-footer"><span id="ecgQuality">품질 미확인</span><span id="ecgWindow">실제 수신 구간만 표시</span></div></article>
-      <article class="signal-panel"><div class="signal-heading"><h3><span class="trace-mark secondary"></span>PPG <span>맥파</span></h3><span id="ppgMeta" class="signal-meta">미수신</span></div><div class="wave-viewport"><canvas id="ppgWave" width="900" height="160" aria-label="수신한 PPG 파형"></canvas><p id="ppgEmpty" class="wave-empty">전처리 파형 수신 대기</p></div><div class="wave-footer"><span id="ppgQuality">품질 미확인</span><span id="ppgWindow">실제 수신 구간만 표시</span></div></article>
-    </section>
-
-    <section class="vehicle-strip" aria-label="주행 정보">
-      <div><span>조향각 변화율</span><strong><b id="steeringRate">··</b><small> °/s</small></strong></div>
-      <div><span>가속 페달</span><strong><b id="acceleratorValue">··</b><small id="acceleratorUnit"> RAW</small></strong></div>
-      <div><span>브레이크 페달</span><strong><b id="brakeValue">··</b><small id="brakeUnit"> RAW</small></strong></div>
-      <div class="vehicle-pattern"><span>개인 주행 패턴</span><strong id="drivingPattern">데이터 수신 대기</strong></div>
-    </section>
-
-    <details class="detail-panel" id="detailPanel"><summary>세부 데이터와 상태 기록 <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></summary>
-      <div class="detail-content">
-        <section class="score-section"><div class="score-numbers"><div><span>모델 졸음 점수</span><strong id="modelScore">··</strong></div><div><span>상태 누적 점수</span><strong id="stateScore">··</strong></div><div><span>신호 품질 가중치</span><strong id="qualityWeight">··</strong></div></div><canvas id="scoreTrend" width="1100" height="180" aria-label="수신한 모델 점수 및 누적 점수"></canvas><div class="trace-legend"><span>모델 점수</span><span>누적 점수</span><span>같은 세션의 측정 시간 기준</span></div></section>
-        <div class="detail-grid"><section><h3>상태 기록</h3><ol id="eventLog" class="event-log"><li class="no-events">수신한 상태 기록이 없습니다.</li></ol></section><section><h3>연결 정보</h3><dl class="quality-details"><div><dt>ECG 이상 간격 비율</dt><dd id="ecgAbnormal">··</dd></div><div><dt>PPG 이상 간격 비율</dt><dd id="ppgAbnormal">··</dd></div><div><dt>사용 신호</dt><dd id="decisionChannel">미수신</dd></div><div><dt>잡음에 따른 누적 보류</dt><dd id="freezeValue">미수신</dd></div><div><dt>차량 교차 확인</dt><dd id="canConfirmation">미수신</dd></div><div><dt>졸음 단계 진입 근거</dt><dd id="confirmationSource">미수신</dd></div></dl></section></div>
-      </div>
-    </details>
+    <details id="detailPanel" class="detail-panel"><summary>세부 데이터와 상태 기록 <span aria-hidden="true">＋</span></summary><div class="detail-content">
+      <section class="score-section"><div class="score-numbers"><div><span>모델 졸음 점수</span><strong id="modelScore">··</strong></div><div><span>상태 누적 점수</span><strong id="stateScore">··</strong></div><div><span>신호 품질 가중치</span><strong id="qualityWeight">··</strong></div></div><canvas id="scoreTrend" width="1100" height="180" aria-label="모델 점수와 누적 점수"></canvas><div class="trace-legend"><span>모델 점수</span><span>누적 점수</span></div></section>
+      <section class="heart-reference-details"><h3>심박 편차와 모델 판정 비교</h3><p id="heartReferenceDetail">실제 기준 평균과 유효 판정 기록이 필요합니다.</p><dl class="heart-state-means"><div><dt>주의 구간 평균</dt><dd id="heartCautionMean">미수신</dd></div><div><dt>졸음 확정 구간 평균</dt><dd id="heartDrowsyMean">미수신</dd></div></dl><p id="heartBandComparison">모델 판정 대기</p><p>색상은 기준 심박수와의 거리입니다. 최종 상태는 상태 머신의 판정을 따릅니다.</p></section>
+      <div class="detail-grid"><section><h3>상태 기록</h3><ol id="eventLog" class="event-log"><li>수신한 상태 기록이 없습니다.</li></ol></section><section><h3>신호·판정 정보</h3><dl class="quality-details"><div><dt>ECG 파형 품질</dt><dd id="ecgQuality">품질 미확인</dd></div><div><dt>PPG 파형 품질</dt><dd id="ppgQuality">품질 미확인</dd></div><div><dt>ECG 표시 구간</dt><dd id="ecgWindow">실제 수신 구간만 표시</dd></div><div><dt>PPG 표시 구간</dt><dd id="ppgWindow">실제 수신 구간만 표시</dd></div><div><dt>ECG 이상 간격 비율</dt><dd id="ecgAbnormal">··</dd></div><div><dt>PPG 이상 간격 비율</dt><dd id="ppgAbnormal">··</dd></div><div><dt>사용 신호</dt><dd id="decisionChannel">미수신</dd></div><div><dt>졸음 후보</dt><dd id="candidateValue">미수신</dd></div><div><dt>잡음에 따른 누적 보류</dt><dd id="freezeValue">미수신</dd></div><div><dt>단계 진입 근거</dt><dd id="confirmationSource">미수신</dd></div><div><dt>ECG·PPG 연결</dt><dd id="bioConnections">미수신</dd></div></dl></section></div>
+    </div></details>
   </main>
-  <footer class="page-footer"><span>J_BERRY PI</span><span id="sessionLabel">세션 연결 대기</span><span>실제 입력 데이터만 표시</span></footer>
+  <footer class="page-footer"><span>J_BERRY PI</span><span id="sessionLabel">세션 대기</span><span>실제 입력만 표시</span></footer>
 </div>
-
-<dialog id="settingsDialog" class="settings-dialog" aria-labelledby="settingsTitle">
-  <form method="dialog" class="dialog-heading"><div><span class="dialog-kicker">데이터 연결</span><h2 id="settingsTitle">입력 설정</h2></div><button class="icon-button" aria-label="설정 닫기">×</button></form>
-  <p class="dialog-intro">연결된 JSON 데이터를 표시합니다. 입력이 없으면 수신 대기 상태로 유지됩니다.</p>
-  <label class="field-label" for="inputSource">입력 소스</label><select id="inputSource"><option value="server">이 Pi의 수신 데이터</option><option value="websocket">외부 실시간 연결</option><option value="file">기록 파일</option></select>
-  <div id="socketControls" hidden><label class="field-label" for="socketUrl">WebSocket 주소</label><input id="socketUrl" type="url" placeholder="ws://192.168.0.20:8765" autocomplete="off" spellcheck="false"><button id="connectSocket" class="button primary" type="button">연결</button></div>
-  <div id="fileControls" hidden><label class="field-label" for="eventFile">JSON 또는 JSONL 기록</label><input id="eventFile" type="file" accept=".json,.jsonl,.ndjson,application/json"><p id="fileName" class="field-help">파일을 선택하면 내용을 먼저 검증합니다.</p><div class="file-actions"><button id="playFile" class="button primary" type="button" disabled>재생</button><button id="stepFile" class="button" type="button" disabled>다음 데이터</button><button id="rewindFile" class="button" type="button" disabled>처음으로</button></div><p id="replayPosition" class="field-help">기록 파일이 없습니다.</p></div>
-  <div id="serverHelp" class="field-help">같은 Pi 서버로 전달된 데이터를 모든 화면에서 함께 봅니다.</div>
-  <p id="inputNotice" class="input-notice" role="status" aria-live="polite"></p>
+<dialog id="setupDialog" class="settings-dialog setup-dialog" aria-labelledby="setupTitle">
+  <div class="setup-heading"><div><span class="dialog-kicker">LOCAL RECORDING SETUP</span><h2 id="setupTitle">사용자 설정·시작</h2></div><button id="closeSetup" class="icon-button" aria-label="설정 창 닫기">×</button></div>
+  <ol class="setup-steps" aria-label="설정 순서"><li data-step="0">사용자</li><li data-step="1">기준 선택</li><li data-step="2">계산</li><li data-step="3">저장</li><li data-step="4">재생</li></ol>
+  <div class="setup-body">
+    <p class="field-help setup-scope">저장된 ECG·PPG 원본 기록으로 기준을 만들고, 기록을 재생하면서 점수와 상태를 새로 계산합니다.</p>
+    <p id="setupNotice" class="notice" role="status" aria-live="polite"></p>
+    <section data-setup-step="0" aria-labelledby="userStepTitle">
+      <h3 id="userStepTitle" class="step-title" tabindex="-1">1. 사용자 등록 또는 선택</h3><p class="field-help">기준을 저장할 사용자를 정하세요. 기존 사용자도 같은 목록에서 선택합니다.</p>
+      <label class="field-label" for="userSelect">기존 사용자</label><select id="userSelect"><option value="">사용자를 선택하세요</option></select>
+      <form id="userForm"><label class="field-label" for="nicknameInput">새 사용자 닉네임</label><div class="inline-field"><input id="nicknameInput" type="text" maxlength="32" placeholder="예: USER1" required autocomplete="off"><button id="registerUser" class="button" type="submit" aria-describedby="registerHint">등록·다음</button></div><p id="registerHint" class="field-help"></p></form>
+      <p id="userReady" class="step-status"></p>
+    </section>
+    <section data-setup-step="1" aria-labelledby="baselineStepTitle" hidden>
+      <h3 id="baselineStepTitle" class="step-title" tabindex="-1">2. 사용할 기준 선택</h3>
+      <fieldset class="baseline-choice"><legend>기준 준비 방법</legend><label><input id="baselineModeSaved" type="radio" name="baselineMode" value="saved"> 저장된 기준 불러오기</label><label><input id="baselineModeNew" type="radio" name="baselineMode" value="new" checked> 새 기준 만들기</label></fieldset>
+      <p id="savedModeHint" class="field-help"></p>
+      <div id="savedBaselineFields" hidden><label class="field-label" for="profileSelect">이 사용자의 모델용 기준</label><select id="profileSelect"><option value="">사용자를 선택하세요</option></select><p id="profileInfo" class="field-help"></p><p class="field-help">저장 기준을 불러오면 계산·저장 단계를 건너뜁니다.</p></div>
+      <div id="newBaselineFields"><label class="field-label" for="baselineRecordSelect">기준을 만들 원본 ECG·PPG 기록</label><select id="baselineRecordSelect"><option value="">원본 기록을 선택하세요</option></select><p id="baselineRecordsInfo" class="field-help"></p><p class="baseline-warning">깨어 있는 안정 상태의 기록을 선택하세요. 이후 판정할 기록은 마지막 단계에서 따로 고릅니다.</p></div>
+      <p id="baselineSelectionHint" class="field-help"></p>
+    </section>
+    <section data-setup-step="2" aria-labelledby="calculationStepTitle" hidden>
+      <h3 id="calculationStepTitle" class="step-title" tabindex="-1">3. 선택 기록으로 기준 계산</h3><p id="calibrationRecord" class="step-status"></p><p class="field-help">처음 60초를 제외한 이후 5분 구간과 품질을 확인합니다. 준비되면 자동으로 멈춥니다.</p>
+      <label class="field-label" for="baselineSpeedSelect">기준용 기록 공급 속도</label><select id="baselineSpeedSelect"><option value="1">원래 시간 간격</option><option value="5">5배</option><option value="10">10배</option><option value="0">가능한 빨리 · 기능 확인용</option></select>
+      <div class="calculation-progress"><progress id="calibrationProgress" max="600" value="0" aria-label="기준 계산 진행"></progress><p id="calibrationState" class="step-status" aria-live="polite"></p><p id="calibrationQuality" class="field-help"></p></div>
+      <div class="playback-actions"><button id="calibrationPause" class="button" aria-describedby="calibrationControlHint">일시정지</button><button id="calibrationStop" class="button" aria-describedby="calibrationControlHint">계산 취소</button></div><p id="calibrationControlHint" class="field-help"></p>
+    </section>
+    <section data-setup-step="3" aria-labelledby="saveStepTitle" hidden>
+      <h3 id="saveStepTitle" class="step-title" tabindex="-1">4. 계산한 기준 저장</h3><p id="saveSummary" class="step-status"></p><label class="field-label" for="profileTitle">저장할 기준 이름</label><input id="profileTitle" type="text" maxlength="80" placeholder="예: USER1_오전안정"><p class="field-help">이름은 기준을 구분하는 용도입니다. 기준 수치는 선택한 원본으로 계산됩니다.</p><p id="saveHint" class="field-help"></p>
+    </section>
+    <section data-setup-step="4" aria-labelledby="replayStepTitle" hidden>
+      <h3 id="replayStepTitle" class="step-title" tabindex="-1">5. 판정할 기록 선택·재생</h3><dl class="setup-review"><div><dt>사용자</dt><dd id="reviewUser">선택 없음</dd></div><div><dt>모델용 기준</dt><dd id="reviewProfile">불러온 기준 없음</dd></div><div><dt>기준을 만든 기록</dt><dd id="reviewBaselineRecord">미확인</dd></div></dl>
+      <label class="field-label" for="replayRecordSelect">새로 판정할 원본 ECG·PPG 기록</label><select id="replayRecordSelect"><option value="">판정할 원본 기록을 선택하세요</option></select><p id="replayRecordsInfo" class="field-help"></p>
+      <label class="field-label" for="speedSelect">판정용 기록 공급 속도</label><select id="speedSelect"><option value="1">원래 시간 간격</option><option value="5">5배</option><option value="10">10배</option><option value="0">가능한 빨리 · 기능 확인용</option></select>
+      <p class="baseline-warning">기준 불러오기와 현재 입력 준비는 별개입니다. 시작 후 약 300초 분량의 현재 기록이 준비될 때까지 판정을 기다립니다.</p><p id="replayReady" class="step-status"></p>
+    </section>
+    <details id="recordingHelp" class="recording-help"><summary>원본 폴더·목록 새로고침</summary><p class="field-help">Pi 또는 PC 서버의 지정 폴더를 읽습니다. 원본 ECG·PPG CSV와 표본 주파수가 기록된 메타정보가 필요합니다.</p><p id="recordingsDirectory" class="directory"></p><button id="refreshRecordings" class="button">기록 목록 새로고침</button><p id="catalogErrors" class="notice"></p></details>
+  </div>
+  <div class="setup-footer"><p id="setupNextHint" class="field-help" aria-live="polite"></p><div class="setup-footer-actions"><button id="setupBack" class="button">이전</button><button id="setupNext" class="button primary" aria-describedby="setupNextHint">기준 선택으로</button></div></div>
+</dialog>
+<dialog id="resultsDialog" class="settings-dialog" aria-labelledby="resultsTitle">
+  <form method="dialog" class="dialog-heading"><div><span class="dialog-kicker">SAVED RESULTS</span><h2 id="resultsTitle">저장 결과 JSON 보기</h2></div><button class="icon-button" aria-label="결과 메뉴 닫기">×</button></form>
+  <p class="baseline-warning">저장된 판정을 그대로 보는 기능이며 모델을 다시 실행하지 않습니다. 결과 JSON은 모델용 baseline으로 등록되지 않습니다.</p>
+  <label class="field-label" for="eventFile">이 브라우저에서 JSON·JSONL 선택</label><input id="eventFile" type="file" accept=".json,.jsonl,.ndjson,application/json"><p id="fileName" class="field-help">파일을 선택하면 먼저 검증합니다.</p>
+  <label class="field-label" for="legacyUserSelect">저장 결과를 조회할 사용자</label><select id="legacyUserSelect"><option value="">사용자를 선택하세요</option></select><label class="field-label" for="legacySelect">이 사용자의 기존 기준 수집 결과 기록</label><select id="legacySelect"><option value="">저장 기록 없음</option></select><p id="legacyHint" class="field-help"></p><button id="loadLegacy" class="button" disabled aria-describedby="legacyHint">저장 결과 불러와 보기</button><p id="resultsNotice" class="notice" role="status"></p>
 </dialog>
 </body>
 </html>
