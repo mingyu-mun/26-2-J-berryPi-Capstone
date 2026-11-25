@@ -78,6 +78,24 @@ bash pi_test.sh run
 
 운전자 상태는 상태 머신의 실제 출력을 표시한다. 준비 전에는 **판정 대기**, 졸음 후보는 메인에서 **주의**로 묶고 상세에 후보 여부를 표시한다. 신호 불량·처리 오류를 정상으로 표시하지 않는다. ECG 계기판의 외곽 색상은 기준 심박 편차이고 졸음 점수의 경계가 아니다. 파형 아래 품질·시간 문구는 표시하지 않고, 해당 정보는 접힌 **세부 데이터와 상태 기록 → 신호·판정 정보**에서 확인한다.
 
+## 시뮬레이터 CAN 보조 확정 (`--can-sim`)
+
+생체 졸음 판정을 **시뮬레이터 CAN 조향 이탈**로 보조 확정한다. 실차 CAN 데이터셋과 실차 개인 기준이 없으므로 **시뮬레이터 출처(`origin="simulated"`)에서만** 동작한다.
+
+```bash
+python scripts/run_dashboard.py --can-sim                       # 내장 합성 고속도로 주행 + 합성 개인 기준
+python scripts/run_dashboard.py --can-sim --can-sim-every 20    # 조향 이탈 간격(초) 조정
+python scripts/run_dashboard.py --can-sim-scenario drive.jsonl --can-sim-profile git_upload_ver1/data/profiles/P01.json
+```
+
+- 판정 재생(기준 계산 제외)마다 CAN 시나리오가 재생 0초부터 같은 시계로 함께 흘러간다.
+- 조향 규칙은 `git_upload_ver1/steering_profile.py`(PR #13)의 개인 기준을 그대로 쓴다. 10초 판정 창 안에 개인 기준 이탈이 있으면 `can_drowsy=true`, 창의 절반 이상이 유효 직선 주행이고 이탈이 없으면 `false`, 그 밖에는 `null`.
+- 상태 머신 v2 규칙은 바꾸지 않았다. `can_drowsy=true`는 생체 **졸음 후보**일 때만 3분 추가 대기 없이 졸음을 확정한다. CAN만으로 경고를 시작하지 않는다. 이때 `confirmation_source="can"`.
+- 화면에는 `can_origin=simulated`일 때만 운전자 상태 아래에 `CAN 보조 (시뮬레이터)` 한 줄을 표시한다. 실차·기록 CAN은 표시하지 않는다.
+- 시나리오 파일: JSONL 한 줄에 `[stamp_us, speed_kmh, steering_deg]` (첫 표본 기준 마이크로초, dict 줄은 무시. `can_live.py --collect-normal` 기록과 같은 형식) 또는 회사 매핑 BLF(`python-can`, `cantools` 필요).
+- 외부 송신 모드에서는 `git_upload_ver1/can_live.py --origin simulated`가 같은 `deviation_status`·`can_drowsy`를 `can.telemetry`로 보낸다. 웹보드는 세션 ID 하나만 표시하므로 생체 송신기와 `--session-id`를 맞춰야 한다.
+- 내장 합성 주행은 Unity 대체 시연용이다. 성능 수치로 제시하지 않는다.
+
 ## 원본 기록 폴더 형식
 
 서버는 지정 폴더와 바로 아래 기록 폴더의 원본 쌍을 찾는다. 한국어 원본 이름과 `meta.json`이 한 쌍으로 명확하면 자동 조회한다. 여러 metadata가 있으면 `notes`에서 해당 `원본_*_YYYYMMDD_HHMMSS.csv`를 명시한 파일이 하나일 때만 연결한다. 시간상 가까운 파일이나 Hz를 추측하지 않는다.

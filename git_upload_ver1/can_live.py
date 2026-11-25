@@ -17,8 +17,8 @@ from urllib.request import Request, urlopen
 import can
 import cantools
 
-from steering_profile import (Assessment, COMPANY_SPEED_MAX_AGE_US, CONFIG, DATA_DIR, NormalRecorder,
-                              STEERING_MAX_AGE_US, load_profile, valid_id, write_line)
+from steering_profile import (Assessment, COMPANY_SPEED_MAX_AGE_US, CONFIG, DATA_DIR, NormalRecorder, RULE_ID,
+                              STEERING_MAX_AGE_US, WEBBOARD_STATUS, load_profile, valid_id, write_line)
 
 OUTPUT_INTERVAL_S = 0.1
 CAN_LIST_DBC = Path(__file__).resolve().parent / "mapping" / "can_list.dbc"
@@ -83,7 +83,12 @@ def can_list_decoder():
     return Decoder(database, CAN_LIST_SIGNALS, invalid_raw={"steering": 32767})
 
 
-def telemetry_event(session_id, origin, rel_us, signals, signal_map_id):
+def telemetry_event(session_id, origin, rel_us, signals, signal_map_id, judgment=None):
+    """judgment: 직전 출력 이후 개인 조향 판정 ("normal"/"deviation"/None).
+
+    can_drowsy 는 시뮬레이터 출처(origin="simulated")에서만 채운다. 실차 기준·데이터셋이 없으므로
+    live 수신은 deviation_status 만 표시하고 can_drowsy=null 을 유지한다.
+    """
     speed, speed_us = signals.get("speed", (None, None))
     steering, steering_us = signals.get("steering", (None, None))
     return {
@@ -93,7 +98,9 @@ def telemetry_event(session_id, origin, rel_us, signals, signal_map_id):
             "speed_kmh": speed, "steering_angle_deg": steering, "steering_rate_deg_s": None,
             "road_wheel_angle_deg": None, "accelerator_pct": None, "brake_pct": None,
             "accel_pedal_raw": None, "brake_pedal_raw": None, "baseline_coverage_pct": None,
-            "deviation_status": "unavailable", "can_drowsy": None, "rule_id": None,
+            "deviation_status": WEBBOARD_STATUS.get(judgment, "unavailable"),
+            "can_drowsy": {"deviation": True, "normal": False}.get(judgment) if origin == "simulated" else None,
+            "rule_id": RULE_ID if judgment is not None else None,
             "signal_map_id": signal_map_id,
             "signal_times_s": {
                 "speed": None if speed_us is None else speed_us / 1_000_000,
@@ -136,8 +143,11 @@ class AlignedSignals:
 
 
 def receive(bus, decoder, clock, emit, *, session_id, origin, signal_map_id=None, duration_s=None,
-            speed_max_age_us=STEERING_MAX_AGE_US, on_steering=None, on_snapshot=None):
-    """조향 프레임마다 개인 판정에 전달하고, 웹보드 이벤트는 최대 10 Hz로 내보낸다."""
+            speed_max_age_us=STEERING_MAX_AGE_US, on_steering=None, on_snapshot=None, judgment=None):
+    """조향 프레임마다 개인 판정에 전달하고, 웹보드 이벤트는 최대 10 Hz로 내보낸다.
+
+    judgment: 호출하면 직전 출력 이후의 개인 판정("normal"/"deviation"/None)을 돌려주고 비우는 함수.
+    """
     aligned = AlignedSignals(speed_max_age_us)
     last_steering_us = -1
     last_output = {}
@@ -165,9 +175,10 @@ def receive(bus, decoder, clock, emit, *, session_id, origin, signal_map_id=None
                 speed, _ = snapshot.get("speed", (None, None))
                 steering, _ = snapshot.get("steering", (None, None))
                 on_snapshot(rel_us, speed, steering)
-            if rel_us > last_output_us and snapshot != last_output:
-                emit(telemetry_event(session_id, origin, rel_us, snapshot, signal_map_id))
-                last_output = snapshot
+            current = judgment() if judgment is not None else None
+            if rel_us > last_output_us and (snapshot, current) != last_output:
+                emit(telemetry_event(session_id, origin, rel_us, snapshot, signal_map_id, current))
+                last_output = snapshot, current
                 last_output_us = rel_us
                 next_emit = now + OUTPUT_INTERVAL_S
 
@@ -244,6 +255,8 @@ def main():
     mode.add_argument("--collect-normal", metavar="DRIVER", help="record this driver's straight-road normal session")
     mode.add_argument("--assess", metavar="DRIVER", help="apply this driver's saved baseline")
     parser.add_argument("--data-dir", type=Path, default=DATA_DIR)
+    parser.add_argument("--origin", choices=("live", "simulated"), default="live",
+                        help="simulated: Unity 등 시뮬레이터가 보낸 CAN (can_drowsy 를 채움)")
     args = parser.parse_args()
     if args.can_list and (args.speed or args.steering):
         parser.error("--can-list already selects speed and steering")
@@ -278,7 +291,7 @@ def main():
                                               can_filters=decoder.filters(), ignore_config=True))
             board = stack.enter_context(Webboard(args.webboard)) if args.webboard else None
             clock = SessionClock(args.session_start_unix_s)
-            on_steering = on_snapshot = None
+            on_steering = on_snapshot = judgment = None
             if args.collect_normal:
                 recorder = stack.enter_context(NormalRecorder(args.data_dir, args.collect_normal, args.session_id))
                 on_steering = recorder.observe
@@ -294,7 +307,20 @@ def main():
                     if decision["deviation_status"] == "deviation":
                         print(f"Personal steering deviation: {json_line(decision)}", file=sys.stderr)
 
-                assessment = Assessment(profile, args.session_id, emit_decision)
+                latest = {"current": None, "deviation": False}
+
+                def emit_and_latch(decision):
+                    # Assessment emits only on change; keep the current state and latch short deviations.
+                    emit_decision(decision)
+                    latest["current"] = decision["deviation_status"]
+                    latest["deviation"] |= latest["current"] == "deviation"
+
+                def judgment():
+                    value = "deviation" if latest["deviation"] else latest["current"]
+                    latest["deviation"] = False
+                    return value if value in ("normal", "deviation") else None
+
+                assessment = Assessment(profile, args.session_id, emit_and_latch)
                 on_steering, on_snapshot = assessment.observe, assessment.expire
                 print(f"Personal decisions: {decision_path}", file=sys.stderr)
 
@@ -306,9 +332,9 @@ def main():
 
             print(f"Listening on {args.channel} (session {args.session_id})", file=sys.stderr)
             try:
-                receive(bus, decoder, clock, emit, session_id=args.session_id, origin="live",
+                receive(bus, decoder, clock, emit, session_id=args.session_id, origin=args.origin,
                         signal_map_id=signal_map_id, duration_s=args.duration_s, speed_max_age_us=speed_max_age_us,
-                        on_steering=on_steering, on_snapshot=on_snapshot)
+                        on_steering=on_steering, on_snapshot=on_snapshot, judgment=judgment)
             finally:
                 print(f"Frames rejected during decode: {decoder.bad_frames}", file=sys.stderr)
     except KeyboardInterrupt:

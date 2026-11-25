@@ -15,8 +15,10 @@ LOG = logging.getLogger(__name__)
 
 
 class LocalReplay:
-    def __init__(self, engine, library, recordings_dir, model_dir=ROOT/'models', backend_factory=None):
+    def __init__(self, engine, library, recordings_dir, model_dir=ROOT/'models', backend_factory=None, can_assist_factory=None):
         self.engine, self.library = engine, library
+        # Simulator-only CAN assist for judgment replays (not used while calibrating the bio baseline).
+        self.can_assist_factory = can_assist_factory
         self.catalog = RecordingCatalog(recordings_dir)
         self.profiles = ModelProfileStore(library)
         self.model_dir = Path(model_dir)
@@ -165,8 +167,11 @@ class LocalReplay:
                     from .streaming_model import CausalStudent
                     self.backend=CausalStudent(self.model_dir,feature_mode='causal_trailing_v1',experimental=True)
             clock=[0.]
+            can_assist=None
+            if self.can_assist_factory is not None and self.state['mode']!='calibrate':
+                can_assist=self.can_assist_factory()
             runtime=Runtime(self.config(recording),self.backend,Sink(),clock=lambda:clock[0],
-                            origin='recorded',synchronous=True,baseline_profile=profile)
+                            origin='recorded',synchronous=True,baseline_profile=profile,can_assist=can_assist)
             # Stable controller session ID also labels profile provenance and events.
             with self.lock:
                 if generation!=self.generation or self.closed:

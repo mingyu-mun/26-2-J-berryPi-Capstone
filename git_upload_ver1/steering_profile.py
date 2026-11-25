@@ -16,6 +16,9 @@ ANGLE_BANDS = (1, 2, 5, 10)
 STEERING_MAX_AGE_US = 80_000
 COMPANY_SPEED_MAX_AGE_US = 120_000
 MIN_EPISODES = 5
+RULE_ID = "steer_hold_personal_v1"
+# Personal decision → webboard can.telemetry deviation_status (schema v1.2).
+WEBBOARD_STATUS = {"normal": "within_baseline", "deviation": "outside_baseline"}
 CONFIG = {
     "version": 1, "signal_map_id": "can-list-speed-steering-v1",
     "speed_band_kmh": list(SPEED_BAND), "speed_max_age_us": COMPANY_SPEED_MAX_AGE_US,
