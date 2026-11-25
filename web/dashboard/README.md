@@ -102,6 +102,10 @@ python scripts/run_dashboard.py --can-sim --can-sim-steering       # 선택: PR 
 - 화면에는 `can_origin=simulated`일 때만 운전자 상태 아래에 `차량 경고: …` 한 줄을 표시한다(화면에는 시뮬레이터 표기를 하지 않고 발표에서 설명). `can.telemetry`의 `status_codes`에 네 신호 원시값을 싣는다. 실차·기록 CAN은 표시하지 않는다.
 - 내장 합성 주행: 20초부터 30초마다 차선 경고(1.5초)와 부주의 경고(3초)를 번갈아 내고, 35초부터 60초마다 방향지시등을 켠 차로 변경(그 안에서 차선 경고 1초, 제외 대상)을 넣는다. 시연용이며 성능 근거가 아니다.
 
+### 통합 테스트 도구
+
+`scripts/can_sim_scenario.py`: `make`(합성 CAN JSONL 생성), `check`(10초 창별 `can_drowsy`·원인 출력, Unity 기록 점검), `e2e`(가짜 고점수 모델 + 실제 상태 머신으로 CAN 유무 비교·규약 검증, 모델 가중치 불필요), `bio`(합성 원본 ECG·PPG 기록 폴더 생성, 재생 흐름 점검용). CAN 시나리오는 판정 재생 기록보다 길어야 한다.
+
 ### Unity 출력 형식
 
 Unity의 차선 이탈 경고·부주의 경고 기능 출력을 회사 CAN 매핑(`Can list.xlsx`) 형식으로 내보낸다. 둘 중 하나:
