@@ -18,6 +18,7 @@
       if (rule.minimum != null && value < rule.minimum || rule.maximum != null && value > rule.maximum || rule.exclusiveMinimum != null && value <= rule.exclusiveMinimum) fail('수치 범위를 벗어났습니다.');
     }
     if (typeof value === 'string' && rule.minLength != null && value.length < rule.minLength) fail('비어 있는 문자열입니다.');
+    if (typeof value === 'string' && rule.pattern && !new RegExp(rule.pattern).test(value)) fail('문자열 형식이 잘못됐습니다.');
     if (Array.isArray(value)) {
       if (rule.minItems != null && value.length < rule.minItems) fail('배열이 비어 있습니다.');
       if (rule.items) value.forEach((item, i) => check(item, rule.items, `${path}[${i}]`));
@@ -33,6 +34,12 @@
   function validate(event, schema) {
     check(event, schema, '이벤트');
     const p = event.payload;
+    if (event.type === 'system.status' && p.bio_baseline.ecg_reference) {
+      const base = p.bio_baseline, ref = base.ecg_reference;
+      const saved = ref.profile_id !== undefined && ref.source_session_id !== undefined;
+      const foreign = saved && ref.source_session_id !== event.session_id;
+      if ((ref.profile_id !== undefined) !== (ref.source_session_id !== undefined) || base.status !== 'ready' || ref.start_s >= ref.end_s || !foreign && ref.end_s > event.t_rel_s + .001) throw new Error('심박 기준은 준비 완료된 실제 기준 구간이어야 합니다.');
+    }
     if (event.type === 'ai.decision' && p.output) {
       const o = p.output, names = {'-1': '측정 불가', 0: '정상', 1: '주의', 2: '졸음'};
       if (p.baseline_status !== 'ready') throw new Error('기준이 준비되지 않은 판정의 output은 null이어야 합니다.');
