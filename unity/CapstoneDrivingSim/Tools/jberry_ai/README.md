@@ -78,10 +78,10 @@ rec_20261118 한 세션에서 자기보고 라벨(10~25분 졸음)과 비교한 
 
 - 생체 출처는 `recorded`(기록 재생), CAN 출처는 `simulated`(시뮬레이터 합성)이다. 화면에도 배지로 계속 표시한다.
 - `can_drowsy`는 저장소 규칙 `vehicle_warning_sim_v1`(`src/driver_state/can_assist.py`, PR #16)로 만든다 (2026-11-26). 판정 창 10초 안에 Unity 차선 이탈 경고(`LaneSafe_indi=5`, 방향지시등이 켜져 있거나 꺼진 뒤 3초 이내는 제외) 또는 부주의 경고(`Careless_Warn≥2`)가 있으면 `true`, 없으면 `false`. Unity가 경고 상태 코드를 보내지 않으면(구버전) 예전처럼 `null`이다.
-  - 상태 머신 v2(main)는 생체 판정이 **주의** 이상일 때 `can_drowsy=true`면 졸음으로 격상한다. 정상 단계에서는 차량 경고만으로 경고하지 않는다.
-  - 졸음에 처음 오른 창의 `can_drowsy`가 `true`면 `confirmation_source="can"`, 아니면 `persistence`.
+  - **CAN 은 졸음 확정에만 쓴다** (2026-11-26 변경). 상태 머신에는 `can_drowsy=None` 으로 넣어 정상/주의/졸음 단계는 생체 신호만으로 정한다 (main 의 '주의 + CAN → 졸음' 격상은 이 서버에서 쓰지 않는다).
+  - 생체 판정이 졸음(level 2)인 동안 `can_drowsy=true` 인 창이 오면 `confirmation_source="can"`(화면: **졸음 확정**)으로 바꾸고 졸음이 끝날 때까지 유지한다. 그 전까지는 `persistence`. 출력 창의 `can_drowsy` 값은 그대로 기록한다.
   - 받은 CAN은 `SimLogs/ai/can_<세션>.jsonl`에 저장소 `--can-sim-scenario` 형식으로도 남긴다.
-  - **필요한 저장소 파일:** `repo/`에 main의 `src/driver_state/state_machine_v2.py`(주의 단계 CAN 격상), `src/driver_state/can_assist.py`, `git_upload_ver1/steering_profile.py`가 있어야 한다. 없으면 서버가 시작할 때 경고를 찍고 `can_drowsy=null`로 동작한다.
+  - **필요한 저장소 파일:** `repo/`에 main의 `src/driver_state/state_machine_v2.py`, `src/driver_state/can_assist.py`, `git_upload_ver1/steering_profile.py`가 있어야 한다. 없으면 서버가 시작할 때 경고를 찍고 `can_drowsy=null`로 동작한다.
 - 화면의 상태는 `StateMachineV2.step` 출력(level, candidate, frozen …)만 쓰며, UI가 따로 판정하지 않는다.
 - CAN 값은 `Can list.xlsx`의 표현 범위로 양자화한다.
   - speed: 0~255 정수

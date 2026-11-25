@@ -36,6 +36,8 @@ namespace CapstoneSim
         public string level_name = "", channel = "", confirmation_source = "";
         // 서버의 차량 경고 판정 (vehicle_warning_sim_v1): 최근 10초 can_drowsy  1=있음 0=없음 -1=판정 불가, 원인
         public int can_flag = -1;
+        // 졸음 확정: 상태 머신 '졸음' 중 차량 경고(차선 이탈·부주의)가 함께 있었음 (confirmation_source = "can")
+        public bool confirmed;
         public string can_reason = "";
         public bool candidate, frozen;
         public float score = -1, p_used = -1, confidence = -1, p_ep = -1, p_ppg = -1, q_ecg = -1, q_ppg = -1,

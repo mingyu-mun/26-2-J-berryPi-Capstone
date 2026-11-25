@@ -114,8 +114,8 @@ namespace CapstoneSim
 
         void DrawHelp(float W)
         {
-            string[] keys = { "W/↑", "S/↓", "A·D", "L", "M", "Q/E", "G", "K", "R", "C", "T", "H", "Esc" };
-            string[] acts = { "가속", "브레이크", "조향", "기록", "마커", "깜빡이", "조향 보조", "부주의 시연", "복귀", "시점", "조향 방식", "HUD", "메뉴" };
+            string[] keys = { "W/↑", "S/↓", "A·D", "L", "M", "Q/E", "G", "K", "F8", "R", "C", "T", "H", "Esc" };
+            string[] acts = { "가속", "브레이크", "조향", "기록", "마커", "깜빡이", "조향 보조", "부주의 시연", "시연 주행", "복귀", "시점", "조향 방식", "HUD", "메뉴" };
             float y = HudLayout.HelpY, h = HudLayout.HelpH, total = 0f;
             for (int i = 0; i < keys.Length; i++) total += SimTheme.DisplayWidth(acts[i], 13) + SimTheme.TextWidth(keys[i], 12, true) + 16 + 6 + 18;
             float x = W - HudLayout.M - total + 18;
@@ -157,6 +157,14 @@ namespace CapstoneSim
             Color lc = w.LaneSafeIndi == 5 ? SimTheme.Red : w.LaneSafeIndi == 4 ? SimTheme.Green : SimTheme.Dim;
             float lw = SimTheme.TextWidth(ln, 14, true) + 20;
             SimTheme.Chip(new Rect(nx, r.y + 5, lw, 24), ln, lc, w.LaneSafeIndi == 5);
+            // 시연 시나리오 자동 운전
+            if (sim.Demo && sim.Demo.Running)
+            {
+                var dr = new Rect(r.x, r.y - 30, r.width, 26);
+                SimTheme.Panel(dr, 6f, 0.8f);
+                SimTheme.Label(new Rect(dr.x + 10, dr.y, dr.width - 20, dr.height),
+                    $"시연 자동 운전 (F8·운전 키로 해제)   ·   {sim.Demo.Phase}   ·   기록 {SimTheme.MmSs(sim.Demo.FileTime)}", 13, SimTheme.Berry, true);
+            }
             // 핸들 조작 없음 시간 (10초 넘으면 표시)
             if (w.HandsOffSec >= 10f)
                 SimTheme.Label(new Rect(r.xMax - 120, r.y, 112, r.height), $"손 뗌 {w.HandsOffSec:0}초", 13,

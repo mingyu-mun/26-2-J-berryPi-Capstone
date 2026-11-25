@@ -12,7 +12,9 @@ server.py — Unity 시뮬레이터 ↔ J_Berry PI 실제 모델(S1-EP + 상태 
   · can_drowsy 는 저장소 규칙 vehicle_warning_sim_v1 (src/driver_state/can_assist.py) 로 만든다 (2026-11-26):
     10초 창 안에 Unity 차선 이탈 경고(LaneSafe_indi=5, 방향지시등 구간 제외) 또는 부주의 경고(Careless_Warn≥2)가
     있으면 True. Unity 가 경고 상태 코드를 보내지 않으면(구버전) 이전과 같이 null.
-    차량 경고는 졸음 정답이 아니라 보조 입력이다. 상태는 StateMachineV2.step 출력만 쓴다 (UI 가 따로 판정하지 않음)
+  · CAN 은 졸음 판정의 보조로만 쓴다: 상태 머신 v2 는 생체만으로 정상·주의·졸음을 정하고(CAN 미사용),
+    '졸음'인 동안 can_drowsy=True 인 창이 오면 '졸음 확정'(confirmation_source="can")으로 표시한다.
+    졸음 아래로 내려가면 확정도 풀린다. 차량 경고는 졸음 정답이 아니라 보조 입력이다.
   · 받은 CAN 은 SimLogs/ai/can_<세션>.jsonl 에 저장소 --can-sim-scenario 형식으로도 남긴다
   · 값이 없으면 null (Unity 로 보내는 UI 패킷은 JsonUtility 제약 때문에 -1 + has_* 플래그로 표시)
 
@@ -348,11 +350,13 @@ class Server:
         s.hist.append((r.t_end, -1.0 if p_used is None else float(p_used), int(st.level)))
         s.hist = s.hist[-120:]
         bstat = "ready" if s.eng.baseline_ready else s.eng.base_status
-        # 졸음(2)에 처음 오른 창의 CAN 판정이 True 면 'can', 아니면 'persistence' (pi_runtime 과 같은 규칙)
+        # 졸음 확정: 상태 머신이 '졸음'(2)인 동안 차량 경고(can_drowsy=True) 창이 오면 확정. 졸음에서 내려가면 풀림.
         if bstat != "ready" or int(st.level) != 2:
             s.confirmation = None
+        elif r.win_in.can_drowsy is True:
+            s.confirmation = "can"
         elif s.confirmation is None:
-            s.confirmation = "can" if r.win_in.can_drowsy is True else "persistence"
+            s.confirmation = "persistence"
         ev = wb.ai_decision(s.id, r.win_in, st, baseline_status=bstat, bio_origin=s.origin,
                             can_origin="simulated" if s.last_can_rx else "unavailable",
                             confirmation_source=s.confirmation)
@@ -367,7 +371,8 @@ class Server:
             st.channel, int(st.frozen), round(r.proc_ms, 1)]) + "\n")
         s.wc.flush()
         print(f"[win] t={r.t_end:7.1f}s replay={rep:7.1f}s lv={st.level}({st.level_name}) cand={int(st.candidate)} "
-              f"p={r3(st.p_used)} ch={st.channel} q={r3(w.q_ecg, 2)} hr={r3(w.hr_ecg, 1)} can={w.can_drowsy} {r.proc_ms:.0f}ms", flush=True)
+              f"p={r3(st.p_used)} ch={st.channel} q={r3(w.q_ecg, 2)} hr={r3(w.hr_ecg, 1)} can={w.can_drowsy} "
+              f"{'졸음확정 ' if s.confirmation == 'can' else ''}{r.proc_ms:.0f}ms", flush=True)
 
     # ------------------------------------------------------------ Unity 로 보낼 화면 패킷
     def ui_packet(self, wave: bool) -> dict:
@@ -398,6 +403,7 @@ class Server:
             pk.update(has_out=True, level=int(st.level), level_name=st.level_name, candidate=bool(st.candidate),
                       score=r3(st.score), p_used=r3(st.p_used), confidence=r3(st.confidence), channel=st.channel,
                       frozen=bool(st.frozen), confirmation_source=s.last_conf_src or "",
+                      confirmed=s.last_conf_src == "can",
                       p_ep=r3(w.p_ep), p_ppg=r3(w.p_ppg), q_ecg=r3(w.q_ecg), q_ppg=r3(w.q_ppg),
                       hr_ecg=r3(w.hr_ecg, 1), hr_ppg=r3(w.hr_ppg, 1), logit_ep=r3(r.logit_ep),
                       win_end=round(r.t_end, 1), proc_ms=round(r.proc_ms, 1),

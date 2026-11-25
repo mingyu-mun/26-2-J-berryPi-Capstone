@@ -2,7 +2,8 @@
 // 주행 화면 정보 패널 (웹보드 규약 v1.2 표시 규칙: 상태는 상태 머신 v2 출력만, 값이 없으면 '–')
 //   왼쪽 위   : 운전자 상태 — level(-1 측정 불가 / 0 정상 / 1 주의 / 2 졸음), 졸음 확률·임계값, 판정 이력
 //   오른쪽 위 : 세션 — 데이터 출처(생체 기록 재생 / 실측, CAN 합성), 재생 위치 또는 수신 상태
-//   위 가운데 : 경고 배너 (주의 / 졸음) + 경고음
+//   위 가운데 : 경고 배너 (주의 / 졸음 / 졸음 확정) + 경고음
+//   졸음 확정 = 상태 머신(생체)이 '졸음'이고 차량 경고(차선 이탈·부주의)가 함께 있을 때 (서버 confirmed, 2026-11-26)
 //   아래      : ECG · PPG 파형 (최근 6초, 공통 전처리). 개인 기준 파형을 같은 배율로 겹쳐 그림
 using UnityEngine;
 
@@ -74,10 +75,12 @@ namespace CapstoneSim
             var r = Live ? ai.Latest : null;
 
             int lv = r != null && r.has_out ? r.level : -9;
+            if (lv == 2 && r.confirmed) lv = 3;              // 졸음 확정
             if (beep && _audio && lv != _lastLevel)
             {
                 if (lv == 1) _audio.PlayOneShot(_beepLo);
-                if (lv == 2) StartCoroutine(TripleBeep());
+                if (lv == 2) StartCoroutine(DoubleBeep());
+                if (lv == 3) StartCoroutine(TripleBeep());
             }
             _lastLevel = lv;
 
@@ -90,6 +93,11 @@ namespace CapstoneSim
         }
 
         bool Live => ai != null && ai.Connected && ai.Latest != null && ai.SessionAccepted;
+
+        System.Collections.IEnumerator DoubleBeep()
+        {
+            for (int i = 0; i < 2; i++) { _audio.PlayOneShot(_beepLo); yield return new WaitForSecondsRealtime(0.3f); }
+        }
 
         System.Collections.IEnumerator TripleBeep()
         {
@@ -277,7 +285,7 @@ namespace CapstoneSim
             {
                 // 상태 배지 + 졸음 확률
                 var c = SimTheme.LevelColor(r.level);
-                string lvName = string.IsNullOrEmpty(r.level_name) ? "–" : r.level_name;
+                string lvName = string.IsNullOrEmpty(r.level_name) ? "–" : r.level == 2 && r.confirmed ? "졸음 확정" : r.level_name;
                 float bw = Mathf.Max(132f, SimTheme.DisplayWidth(lvName, 40) + 40f);
                 SimTheme.Plate(new Rect(x, y, bw, 76), lvName, c, 40);
                 float px = x + bw + 20;
@@ -292,7 +300,7 @@ namespace CapstoneSim
                 SimTheme.Bar(bar, Mathf.Max(0, r.p_used), pcol);
                 Tick(bar, r.th_on, "on", 1f); Tick(bar, r.th_off, "off", 0.55f);
                 y += 38;
-                string conf = r.level == 2 && r.confirmation_source == "persistence" ? "   ·   지속 조건으로 확정" : "";
+                string conf = r.level == 2 ? (r.confirmed ? "   ·   차량 경고로 확정" : "   ·   차량 경고 대기") : "";
                 SimTheme.Label(new Rect(x, y, w, 20), $"채널 {r.channel}   EP {V(r.p_ep, "F2")}   PPG {V(r.p_ppg, "F2")}   신뢰도 {V(r.confidence, "F2")}{conf}", 13, SimTheme.Sub);
                 y += 28;
             }
@@ -396,15 +404,16 @@ namespace CapstoneSim
             if (w < 360) { w = 600; left = SimTheme.VW * 0.5f - 300; }
             else left = (left + right) * 0.5f - w * 0.5f;
             bool drowsy = lv == 2;
+            bool confirmed = drowsy && ai.Latest.confirmed;
             float pulse = drowsy ? 0.8f + 0.2f * Mathf.Sin(Time.realtimeSinceStartup * 6f) : 1f;
             Color c = drowsy ? SimTheme.Red : SimTheme.Amber;
             var r = new Rect(left, HudLayout.M, w, 76);
             SimTheme.Panel(r);
             SimTheme.Fill(new Rect(r.x + 2, r.y + 2, r.width - 4, r.height - 4), SimTheme.A(c, 0.22f * pulse), 8f);
-            string tag = drowsy ? "졸음" : "주의";
+            string tag = confirmed ? "졸음 확정" : drowsy ? "졸음" : "주의";
             float tw = Mathf.Max(96f, SimTheme.DisplayWidth(tag, 30) + 32f);
             SimTheme.Plate(new Rect(r.x + 14, r.y + 14, tw, 48), tag, SimTheme.A(c, pulse > 0.9f ? 1f : 0.85f), 30);
-            SimTheme.Display(new Rect(r.x + tw + 32, r.y, r.width - tw - 44, r.height), drowsy ? "졸음이 확정됐습니다. 쉬어 가세요" : "졸음 징후가 있습니다", w < 560 ? 20 : 25, SimTheme.Text);
+            SimTheme.Display(new Rect(r.x + tw + 32, r.y, r.width - tw - 44, r.height), confirmed ? "차량 경고까지 겹쳤습니다. 바로 쉬어 가세요" : drowsy ? "졸음 상태입니다. 쉬어 가세요" : "졸음 징후가 있습니다", w < 560 ? 20 : 25, SimTheme.Text);
         }
     }
 }

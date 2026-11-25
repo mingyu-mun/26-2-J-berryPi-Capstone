@@ -249,6 +249,19 @@ namespace CapstoneSim
 #endif
         }
 
+        /// <summary>F8 : 시연 시나리오 자동 운전 켜기/끄기</summary>
+        public static bool DemoTogglePressed()
+        {
+#if ENABLE_INPUT_SYSTEM
+            var kb = Keyboard.current;
+            return kb != null && kb.f8Key.wasPressedThisFrame;
+#elif ENABLE_LEGACY_INPUT_MANAGER
+            return Input.GetKeyDown(KeyCode.F8);
+#else
+            return false;
+#endif
+        }
+
         /// <summary>Esc / 게임패드 B : 뒤로 · 세션 메뉴</summary>
         public static bool BackPressed()
         {

@@ -10,7 +10,9 @@
 // [차선 이탈] 속도 ≥ minSpeedKmh 에서 차체가 차선을 밟으면(|차로 편차| > (차로폭 − 차폭)/2) 경고.
 //             방향지시등이 켜져 있으면 경고하지 않는다(정상 차로 변경). 한 번 켜지면 최소 holdSec 유지.
 // [부주의]    (1) 핸들 조작 없음: 운전자가 핸들을 만지지 않은 시간 ≥ 15 s → 1, ≥ 25 s → 2, ≥ 40 s → 3
-//             (2) 반복 이탈: 최근 60 s 안의 차선 이탈 경고 2회 → 2, 3회 이상 → 3
+//                 → 운전자가 핸들을 조작하면 바로 꺼진다.
+//             (2) 반복 이탈: 최근 60 s 안에 차선 이탈 경고가 2회째 나면 2 (3회 이상이면 3) 를 alertSec 동안 표시하고,
+//                 셈을 비운다 (경고가 계속 남지 않게, 2026-11-26 수정).
 //             (3) 시연: K 키로 demoSec 동안 2
 //             조향 보조가 강할 때 손을 떼고 달리면 (1)이 켜진다. 실차의 '핸들을 잡으세요' 경고와 같은 성격이다.
 // [깜빡이]    Q/E 로 켠 뒤 옆 차로로 옮겨 차로 중심 근처(±0.6 m)에 1 s 머물면 자동으로 끈다. 20 s 가 지나도 끈다.
@@ -35,7 +37,7 @@ namespace CapstoneSim
         [Header("부주의 경고")]
         public float handsOff1 = 15f, handsOff2 = 25f, handsOff3 = 40f;
         [Tooltip("반복 이탈을 세는 구간 [s]")] public float departWindowSec = 60f;
-        [Tooltip("부주의 2단계 이상 최소 유지 [s]")] public float carelessHoldSec = 3f;
+        [Tooltip("반복 이탈 부주의 경고 표시 시간 [s]")] public float alertSec = 5f;
         [Tooltip("K 키 시연 지속 [s]")] public float demoSec = 4f;
 
         [Header("방향지시등")]
@@ -60,7 +62,8 @@ namespace CapstoneSim
 
         float _laneOnTime = -999f, _laneLastDepart = -999f;
         readonly Queue<float> _departs = new Queue<float>();
-        float _demoUntil = -999f, _carelessHoldUntil = -999f;
+        float _demoUntil = -999f, _departAlertUntil = -999f;
+        int _departAlertLevel;
         int _signalLane, _signalDir;
         float _signalStart, _settleTime;
 
@@ -125,6 +128,13 @@ namespace CapstoneSim
                     {
                         _laneOnTime = now;
                         _departs.Enqueue(now);
+                        while (_departs.Count > 0 && now - _departs.Peek() > departWindowSec) _departs.Dequeue();
+                        if (_departs.Count >= 2)
+                        {
+                            _departAlertLevel = _departs.Count >= 3 ? 3 : 2;
+                            _departAlertUntil = now + alertSec;
+                            if (_departs.Count >= 3) _departs.Clear();
+                        }
                         if (logger) logger.LogEvent("LANE_WARN", ts.laneOffset.ToString("F2", System.Globalization.CultureInfo.InvariantCulture));
                     }
                     _laneLastDepart = now;
@@ -146,12 +156,10 @@ namespace CapstoneSim
             {
                 int h = HandsOffSec >= handsOff3 ? 3 : HandsOffSec >= handsOff2 ? 2 : HandsOffSec >= handsOff1 ? 1 : 0;
                 if (h > c) { c = h; why = "핸들 조작 없음"; }
-                int d = _departs.Count >= 3 ? 3 : _departs.Count >= 2 ? 2 : 0;
+                int d = now < _departAlertUntil ? _departAlertLevel : 0;
                 if (d > c) { c = d; why = "차선 이탈 반복"; }
             }
             if (now < _demoUntil && c < 2) { c = 2; why = "시연"; }
-            if (c >= 2) _carelessHoldUntil = now + carelessHoldSec;
-            else if (CarelessWarn >= 2 && now < _carelessHoldUntil) { c = CarelessWarn; why = CarelessReason; }
             if (c != CarelessWarn && logger) logger.LogEvent("CARELESS_WARN", c + " " + why);
             CarelessWarn = c;
             CarelessReason = why;

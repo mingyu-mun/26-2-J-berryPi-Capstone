@@ -321,6 +321,28 @@ namespace CapstoneSim
             return m;
         }
 
+        /// <summary>진행 거리 s 에서 앞으로 [from, to] m 구간의 최대 곡률 [1/m] (조향 보조의 커브 감속·피드포워드용)</summary>
+        public float CurvatureAhead(float s, float from, float to)
+        {
+            int n = _curv.Count;
+            if (n == 0 || Length <= 0f) return 0f;
+            float ds = Length / n, kmax = 0f;
+            for (float d = from; d <= to; d += ds)
+            {
+                int i = (int)(Mathf.Repeat(s + d, Length) / ds) % n;
+                kmax = Mathf.Max(kmax, Mathf.Abs(_curv[i]));
+            }
+            return kmax;
+        }
+
+        /// <summary>진행 거리 s 의 곡률 [1/m] (부호 포함)</summary>
+        public float CurvatureAt(float s)
+        {
+            int n = _curv.Count;
+            if (n == 0 || Length <= 0f) return 0f;
+            return _curv[(int)(Mathf.Repeat(s, Length) / (Length / n)) % n];
+        }
+
         /// <summary>월드 좌표 위치·전방벡터를 트랙에 투영</summary>
         public TrackSample Query(Vector3 worldPos, Vector3 forward)
         {

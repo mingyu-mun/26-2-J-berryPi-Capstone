@@ -64,6 +64,8 @@ namespace CapstoneSim
         [Header("운전 보조 · 차량 경고")]
         [Tooltip("조향 보조 시작 세기 (주행 중 G 키로 끔 → 약 → 강)")] public AssistLevel assistLevel = AssistLevel.Strong;
         [Tooltip("차선 이탈·부주의 경고음")] public bool warningSound = true;
+        [Tooltip("주행 시작 때 시연 시나리오 자동 운전을 켬 (주행 중 F8 로도 켜고 끔). 생체 기록 재생 위치에 맞춰 정상→졸음 운전을 재현")]
+        public bool demoScenario = false;
 
         [Header("물리")]
         [Tooltip("물리 갱신 주기 [Hz]. 차량 안정성을 위해 100 Hz 권장")] public float physicsHz = 100f;
@@ -82,6 +84,7 @@ namespace CapstoneSim
         public SimHUD Hud { get; private set; }
         public DriverAssist Assist { get; private set; }
         public VehicleWarnings Warnings { get; private set; }
+        public DemoDriver Demo { get; private set; }
         public SimPanels Panels { get; private set; }
         public MainMenu Menu { get; private set; }
         public LiveBioSource Live { get; private set; }
@@ -210,6 +213,8 @@ namespace CapstoneSim
             Warnings.car = Car; Warnings.track = Track; Warnings.logger = Logger; Warnings.assist = Assist;
             Warnings.sound = warningSound;
             Logger.warnings = Warnings;
+            Demo = gameObject.AddComponent<DemoDriver>();
+            Demo.car = Car; Demo.track = Track; Demo.assist = Assist; Demo.sim = this;
 
             Hud = gameObject.AddComponent<SimHUD>();
             Hud.car = Car;
@@ -257,6 +262,7 @@ namespace CapstoneSim
         public void EnterMenu(string page = null)
         {
             InSession = false;
+            if (Demo) Demo.End();
             if (Cam && Cam.mode != FollowCamera.Mode.Showcase) { _driveCamMode = Cam.mode; Cam.mode = FollowCamera.Mode.Showcase; }
             // 메뉴 배경: 차로를 따라 달리는 모의 주행 (정지 + 브레이크 유지는 후진으로 이어지므로 쓰지 않음)
             if (!_autopilot) { _autopilot = gameObject.AddComponent<CarAutopilot>(); _autopilot.car = Car; _autopilot.track = Track; }
@@ -308,6 +314,8 @@ namespace CapstoneSim
             Panels = gameObject.AddComponent<SimPanels>();
             Panels.bio = Bio; Panels.ai = Ai; Panels.sim = this;
             Logger.ai = Ai; Logger.bio = Bio;
+            Demo.bio = Bio;
+            if (demoScenario) Demo.Begin();
             InSession = true;
             SessionStartRealtime = Time.realtimeSinceStartup;
         }
@@ -315,6 +323,7 @@ namespace CapstoneSim
         /// <summary>세션 종료: 기록 정지, AI 서버 종료, 차량 원위치 후 메뉴로</summary>
         public void EndSession(bool toMenu = true)
         {
+            if (Demo) { Demo.End(); Demo.bio = null; }
             Logger.StopRecording();
             Logger.ai = null; Logger.bio = null;
             if (Panels) Destroy(Panels);

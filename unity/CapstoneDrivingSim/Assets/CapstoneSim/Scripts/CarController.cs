@@ -79,6 +79,15 @@ namespace CapstoneSim
 
         // ---------- 조향 보조 (DriverAssist 가 매 물리 스텝 채움) ----------
         [HideInInspector] public float assistTargetDeg, assistGain, assistCapDeg;
+        [Tooltip("조향 보조 중 운전자 핸들각 반영 비율 (강 모드에서 1보다 작게 → 운전자 입력을 줄여 차로 유지가 쉬움)")]
+        [HideInInspector] public float humanSteerScale = 1f;
+        [Tooltip("조향 보조의 속도 상한 [km/h] (0 이면 없음). 넘으면 가속을 끊고 살짝 제동")]
+        [HideInInspector] public float assistMaxKmh;
+
+        // ---------- 시연 시나리오 운전자 (DemoDriver) — 사람 입력 대신 '운전자 핸들각·페달'을 넣음 ----------
+        // externalControl 과 달리 조향 보조·차량 경고는 사람이 운전할 때와 똑같이 동작한다.
+        [HideInInspector] public bool scripted, scriptedHandsOn;
+        [HideInInspector] public float scriptedHumanDeg, scriptedThrottle, scriptedBrake;
 
         // ---------- 로거가 읽어 가는 값 ----------
         public float ThrottleInput { get; private set; }     // 0~1 (실제 페달 위치)
@@ -173,8 +182,8 @@ namespace CapstoneSim
             float spd01 = Mathf.InverseLerp(0f, 100f, Mathf.Abs(speedKmh));
 
             // ----- 페달 (키보드는 0/1이므로 램프로 부드럽게) -----
-            float thrT = externalControl ? Mathf.Clamp01(extThrottle) : SimInput.Throttle();
-            float brkT = externalControl ? Mathf.Clamp01(extBrake) : SimInput.Brake();
+            float thrT = externalControl ? Mathf.Clamp01(extThrottle) : scripted ? Mathf.Clamp01(scriptedThrottle) : SimInput.Throttle();
+            float brkT = externalControl ? Mathf.Clamp01(extBrake) : scripted ? Mathf.Clamp01(scriptedBrake) : SimInput.Brake();
             ThrottleInput = Mathf.MoveTowards(ThrottleInput, thrT, pedalRate * dt);
             BrakeInput = Mathf.MoveTowards(BrakeInput, brkT, pedalRate * dt);
 
@@ -194,6 +203,12 @@ namespace CapstoneSim
             {
                 motor = speedKmh < topSpeedKmh ? ThrottleInput * maxMotorTorque : 0f;
                 brake = BrakeInput * maxBrakeTorque;
+                // 조향 보조의 속도 상한 (커브 앞 자동 감속): 넘으면 가속 끊고, 많이 넘으면 제동
+                if (!externalControl && assistMaxKmh > 0f && speedKmh > assistMaxKmh)
+                {
+                    motor = 0f;
+                    brake = Mathf.Max(brake, Mathf.Clamp01((speedKmh - assistMaxKmh) / 15f) * maxBrakeTorque * 0.5f);
+                }
                 if (ThrottleInput < 0.02f && BrakeInput < 0.02f) brake = 60f; // 엔진 브레이크 느낌
             }
             wheelRL.motorTorque = motor; wheelRR.motorTorque = motor;
@@ -262,6 +277,12 @@ namespace CapstoneSim
 
             float sw = _humanSw;
             float before = _humanSw;
+            if (scripted)
+            {
+                float tgt = Mathf.Clamp(scriptedHumanDeg, -lockNow, lockNow);
+                sw = Mathf.Lerp(_humanSw, tgt, 1f - Mathf.Exp(-dt / 0.08f));
+                src = SteerMode.Auto;   // 아래 switch 를 건너뜀
+            }
             switch (src)
             {
                 case SteerMode.Keyboard:
@@ -300,7 +321,7 @@ namespace CapstoneSim
             sw = Mathf.MoveTowards(_humanSw, sw, maxSteerRate * dt);
             _humanSw = Mathf.Clamp(sw, -steeringLockDeg, steeringLockDeg);
             // 운전자가 핸들을 만졌는지: 키를 누르고 있거나 핸들각이 3°/s 이상 움직임 (키보드 손 뗌 복원은 제외)
-            if (kb != 0f || (src != SteerMode.Keyboard && Mathf.Abs(_humanSw - before) > 3f * dt))
+            if (scripted ? scriptedHandsOn : (kb != 0f || (src != SteerMode.Keyboard && Mathf.Abs(_humanSw - before) > 3f * dt)))
                 LastDriverSteerTime = Time.time;
 
             // 조향 보조 보정각 (상한 있음)
@@ -308,7 +329,7 @@ namespace CapstoneSim
             if (assistGain > 0f && assistCapDeg > 0f)
                 assist = Mathf.Clamp(assistGain * assistTargetDeg, -assistCapDeg, assistCapDeg);
             AssistWheelDeg = Mathf.MoveTowards(AssistWheelDeg, assist, maxSteerRate * 0.25f * dt);
-            float final = Mathf.Clamp(_humanSw + AssistWheelDeg, -steeringLockDeg, steeringLockDeg);
+            float final = Mathf.Clamp(_humanSw * Mathf.Clamp01(humanSteerScale) + AssistWheelDeg, -steeringLockDeg, steeringLockDeg);
             SteeringWheelDeg = Mathf.MoveTowards(SteeringWheelDeg, final, maxSteerRate * dt);
         }
 
