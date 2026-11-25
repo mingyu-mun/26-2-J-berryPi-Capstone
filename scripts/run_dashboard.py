@@ -19,6 +19,14 @@ def main():
     parser.add_argument('--models', default=str(Path(__file__).resolve().parents[1]/'models'))
     parser.add_argument('--external-events', action='store_true',
                         help='팀 송신 프로그램의 /api/events 입력만 표시; 로컬 기록 제어 비활성화')
+    parser.add_argument('--can-sim', action='store_true',
+                        help='판정 재생에 시뮬레이터 차량 경고(차선·부주의) 보조 확정(can_drowsy)을 붙인다. 실차 CAN에는 쓰지 않는다')
+    parser.add_argument('--can-sim-scenario', help='시뮬레이터 CAN 기록 (JSONL 또는 회사 매핑 BLF). 없으면 내장 합성 주행')
+    parser.add_argument('--can-sim-every', type=float, default=30.,
+                        help='내장 합성 주행의 이상 상황(차선 경고·부주의 경고 번갈아) 간격(초, 기본 30)')
+    parser.add_argument('--can-sim-steering', action='store_true',
+                        help='선택: PR #13 개인 조향 기준 이탈도 can_drowsy 조건에 추가')
+    parser.add_argument('--can-sim-steering-profile', help='--can-sim-steering 용 개인 조향 기준 data/profiles/<ID>.json. 없으면 합성 기준')
     args = parser.parse_args()
     if not 0 <= args.port <= 65535:
         parser.error("port는 0~65535 범위여야 합니다.")
@@ -31,6 +39,14 @@ def main():
         options = {'library_dir': args.data_dir} if args.data_dir else {}
         if not args.external_events:
             options.update(recordings_dir=args.recordings_dir,model_dir=args.models)
+            if args.can_sim or args.can_sim_scenario:
+                from driver_state.can_assist import build_can_assist
+                can_options = dict(steering_profile=args.can_sim_steering_profile, use_steering=args.can_sim_steering,
+                                   deviation_every_s=args.can_sim_every)
+                build_can_assist(args.can_sim_scenario, **can_options)  # validate early
+                options['can_assist_factory'] = lambda: build_can_assist(args.can_sim_scenario, **can_options)
+        elif args.can_sim or args.can_sim_scenario:
+            parser.error('--can-sim 은 로컬 기록 모드에서만 사용합니다. 외부 송신은 can_live.py --origin simulated 를 쓰세요.')
         server = create_server(args.host, args.port, dashboard=engine, **options)
     except OSError as exc:
         parser.exit(1, f"서버 시작 실패: {exc}\n")
@@ -38,6 +54,8 @@ def main():
     print(f"같은 네트워크: http://<Pi IP>:{server.server_port} / 종료: Ctrl+C", flush=True)
     print('외부 이벤트 수신 모드: 기존 송신 프로그램을 /api/events에 연결하세요.' if args.external_events else
           '로컬 기록 모드: 사용자 설정·시작에서 원본과 기준을 선택하세요.', flush=True)
+    if 'can_assist_factory' in options:
+        print('시뮬레이터 CAN 보조 확정 켜짐: 판정 재생에서 차선 경고·부주의 경고를 can_drowsy로 전달합니다 (시뮬레이터 전용).', flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

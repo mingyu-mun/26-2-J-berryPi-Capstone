@@ -179,7 +179,8 @@ class DashboardServer(ThreadingHTTPServer):
 
 
 def create_server(host="0.0.0.0", port=8000, *, dashboard=None, static_dir=STATIC_DIR,
-                  library_dir=DEFAULT_LIBRARY_DIR, recordings_dir=None, model_dir=None, backend_factory=None):
+                  library_dir=DEFAULT_LIBRARY_DIR, recordings_dir=None, model_dir=None, backend_factory=None,
+                  can_assist_factory=None):
     engine = dashboard or Dashboard(static_dir=static_dir)
     static = Path(static_dir)
     user_route = re.compile(r'/api/users/([0-9a-f]{32})/baselines(?:/([0-9a-f]{32}|current))?')
@@ -333,7 +334,8 @@ def create_server(host="0.0.0.0", port=8000, *, dashboard=None, static_dir=STATI
         if recordings_dir is not None:
             from .local_replay import LocalReplay
             options = {'model_dir': model_dir} if model_dir is not None else {}
-            local = LocalReplay(engine,library,recordings_dir,backend_factory=backend_factory,**options)
+            local = LocalReplay(engine,library,recordings_dir,backend_factory=backend_factory,
+                                can_assist_factory=can_assist_factory,**options)
     except Exception:
         server.server_close()
         raise

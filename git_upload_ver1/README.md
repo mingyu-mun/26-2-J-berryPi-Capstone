@@ -85,7 +85,7 @@ python3 -m venv .venv
 | `CARINFO.Speed` | `0x102` | 100ms | 시작 비트 56, 8비트 unsigned little-endian, 원시값 그대로 km/h |
 | `SAS_FD_01_10ms.SAS_angleVal` | `0x125` | 10ms | 시작 비트 24, 16비트 signed little-endian, 원시값 × 0.1°, 원시값 32767은 `null` |
 
-개인 조향 결과는 위의 판정 파일에 저장합니다. 웹보드용 `can.telemetry`는 기존 형식을 유지하며 `deviation_status=unavailable`, `can_drowsy=null`을 보냅니다. 생체 졸음 상태와 결합하는 추가 경보는 별도 연동 단계입니다.
+개인 조향 결과는 위의 판정 파일에 저장합니다. `--assess` 중에는 웹보드용 `can.telemetry`에도 직전 출력 이후의 판정을 `deviation_status`(`within_baseline`/`outside_baseline`, 판정 불가는 `unavailable`)와 `rule_id=steer_hold_personal_v1`로 싣습니다. 짧은 이탈도 다음 출력에 남깁니다. `can_drowsy`는 `--origin simulated`(Unity 등 시뮬레이터 CAN)일 때만 채우고, 실차(`live`)는 `null`을 유지합니다. 생체 졸음 판정과의 결합은 웹보드 서버의 `--can-sim`을 참고하세요(`web/dashboard/README.md`). 현재 결합 규칙은 시뮬레이터 차량 경고(차선·부주의, DBC `mapping/can_list_warnings.dbc`)가 기본이고 이 조향 규칙은 선택 조건입니다.
 
 ## Unity 개인 조향 기준 검증
 

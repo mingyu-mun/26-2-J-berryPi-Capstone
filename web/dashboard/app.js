@@ -396,7 +396,8 @@ function render() {
   $('decisionChannel').textContent = {EP: 'ECG + PPG', PPG: 'PPG 대체', none: '판정 불가'}[output?.channel] || '미수신';
   $('candidateValue').textContent = output ? output.level === 1 && output.candidate ? '졸음 후보' : '해당 없음' : '미수신';
   $('freezeValue').textContent = output ? output.frozen ? '보류 중' : '없음' : '미수신';
-  $('confirmationSource').textContent = {persistence: '생체 변화 지속', can: '외부 확인'}[ai?.confirmation_source] || '미수신';
+  $('confirmationSource').textContent = {persistence: '생체 변화 지속', can: ai?.can_origin === 'simulated' ? '차량 경고' : '외부 확인'}[ai?.confirmation_source] || '미수신';
+  renderCanAssist(view);
   const connections = view.system?.payload.connections, connectionName = {connected: '연결', disconnected: '끊김', unknown: '미확인'};
   $('bioConnections').textContent = connections ? `ECG ${connectionName[connections.ecg]} · PPG ${connectionName[connections.ppg]}` : '미수신';
   const log = $('eventLog'); log.replaceChildren();
@@ -450,6 +451,22 @@ function buildHeartBand() {
     group.append(path); heartSegments.push({path, bpm: 40 + (i + .5) / 120 * 140});
   }
 }
+// Simulator-only CAN assist (vehicle lane/inattention warnings). Live/recorded CAN stays off screen.
+function renderCanAssist(view) {
+  const el = $('canAssist'), can = view.can;
+  el.hidden = view.origins.can !== 'simulated';
+  if (el.hidden) return;
+  const p = can?.payload, codes = p?.status_codes || {};
+  const parts = [];
+  if (codes.LaneSafe_indi === 5) parts.push(codes.LTurnSig_Indi || codes.RTurnSig_Indi ? '차선 경고 (방향지시등 · 제외)' : '차선 경고');
+  if ((codes.Careless_Warn ?? 0) >= 2) parts.push('부주의 경고');
+  if (p?.deviation_status === 'outside_baseline') parts.push('조향 기준 이탈');
+  const label = !p ? '수신 지연' : p.can_drowsy ? parts.join(' · ') || '경고 발생' : parts.length ? parts.join(' · ') : p.can_drowsy === false ? '경고 없음' : '판정 불가';
+  const reading = p && finite(p.speed_kmh) ? ` · ${value(p.speed_kmh, 0)} km/h` : '';
+  el.textContent = `차량 경고: ${label}${reading}`;
+  el.dataset.status = p?.can_drowsy ? 'outside_baseline' : 'within_baseline';
+}
+
 function renderHeartBand(view) {
   const band = view.heartBand, reference = band?.reference, current = $('heartCurrentMark');
   $('heartReferenceBand').toggleAttribute('hidden', !reference);

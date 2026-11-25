@@ -202,7 +202,7 @@ class CausalStudent:
         elif end-self.zero>=600:
             self.status='retry_required'
 
-    def consume(self,signals,fs,offset,end):
+    def consume(self,signals,fs,offset,end,can_drowsy=None):
         if end<=offset:
             raise ValueError('invalid inference time interval')
         bounded={}
@@ -264,7 +264,8 @@ class CausalStudent:
             p_ep=float(expit(logits['ep'])) if 'ep' in logits else None
             p_ppg=float(expit(logits['ppg'])) if 'ppg' in logits else None
         wi=WindowIn(t=end,p_ep=p_ep,q_ecg=inputs['ecg'][0],p_ppg=p_ppg,q_ppg=inputs['ppg'][0],
-            hr_ecg=inputs['ecg'][2],hr_ppg=inputs['ppg'][2],ok_ecg=inputs['ecg'][1],ok_ppg=inputs['ppg'][1])
+            hr_ecg=inputs['ecg'][2],hr_ppg=inputs['ppg'][2],ok_ecg=inputs['ecg'][1],ok_ppg=inputs['ppg'][1],
+            can_drowsy=can_drowsy)
         result['input']=asdict(wi)
         if self.status=='ready' and input_ready:
             if self.last_end is not None and end-self.last_end>10.001:

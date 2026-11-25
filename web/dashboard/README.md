@@ -78,6 +78,44 @@ bash pi_test.sh run
 
 운전자 상태는 상태 머신의 실제 출력을 표시한다. 준비 전에는 **판정 대기**, 졸음 후보는 메인에서 **주의**로 묶고 상세에 후보 여부를 표시한다. 신호 불량·처리 오류를 정상으로 표시하지 않는다. ECG 계기판의 외곽 색상은 기준 심박 편차이고 졸음 점수의 경계가 아니다. 파형 아래 품질·시간 문구는 표시하지 않고, 해당 정보는 접힌 **세부 데이터와 상태 기록 → 신호·판정 정보**에서 확인한다.
 
+## 시뮬레이터 CAN 보조 확정 (`--can-sim`)
+
+생체 졸음 판정을 **시뮬레이터 차량 경고(차선 경고·부주의 경고)**로 보조 확정한다. 실차 CAN 데이터셋과 실차 주행 기준이 없으므로 **시뮬레이터 출처(`origin="simulated"`)에서만** 동작한다. 차량 경고는 졸음 정답 라벨이 아니라 보조 입력이다.
+
+```bash
+python scripts/run_dashboard.py --can-sim                          # 내장 합성 주행 (Unity 없이 시연·시험)
+python scripts/run_dashboard.py --can-sim --can-sim-every 20       # 이상 상황 간격(초) 조정
+python scripts/run_dashboard.py --can-sim-scenario unity_drive.jsonl   # Unity 기록 (JSONL 또는 BLF)
+python scripts/run_dashboard.py --can-sim --can-sim-steering       # 선택: PR #13 개인 조향 기준 이탈도 조건에 추가
+```
+
+**`can_drowsy` 규칙 (`rule_id=vehicle_warning_sim_v1`, `src/driver_state/can_assist.py`)** — 10초 판정 창마다:
+
+| 결과 | 조건 |
+|---|---|
+| `true` | 차선 경고 `LaneSafe_indi=5`(YellowWarn) — 단 방향지시등이 켜져 있거나 꺼진 뒤 3초 이내면 정상 차로 변경으로 제외 / 부주의 경고 `Careless_Warn≥2`(YellowBlink 이상) / (선택) 개인 조향 기준 이탈 |
+| `false` | 경고 없음, 경고 상태를 한 번 이상 받았고 창의 절반 이상 CAN 수신 |
+| `null` | 그 밖 (경고 상태 미수신, CAN 끊김), 또는 실차·기록 출처 |
+
+- 상태 머신 v2: 생체 판정이 **주의** 이상(점수 > 0.55, 잡음 동결 아님)일 때 `can_drowsy=true`면 바로 졸음으로 격상하고, 졸음 후보에서는 3분 추가 대기 없이 확정한다. 정상 단계에서는 CAN을 쓰지 않으므로 차량 경고만으로 경고를 시작하지 않는다. 이때 `confirmation_source="can"`. 주의 단계 격상은 `V2Config.can_from_caution=False`로 끌 수 있다 (`docs/state-machine-v2.md` 8장).
+- 판정 재생(기준 계산 제외)마다 CAN 시나리오가 재생 0초부터 같은 시계로 함께 흘러간다.
+- 화면에는 `can_origin=simulated`일 때만 운전자 상태 아래에 `차량 경고: …` 한 줄을 표시한다(화면에는 시뮬레이터 표기를 하지 않고 발표에서 설명). `can.telemetry`의 `status_codes`에 네 신호 원시값을 싣는다. 실차·기록 CAN은 표시하지 않는다.
+- 내장 합성 주행: 20초부터 30초마다 차선 경고(1.5초)와 부주의 경고(3초)를 번갈아 내고, 35초부터 60초마다 방향지시등을 켠 차로 변경(그 안에서 차선 경고 1초, 제외 대상)을 넣는다. 시연용이며 성능 근거가 아니다.
+
+### Unity 출력 형식
+
+Unity의 차선 이탈 경고·부주의 경고 기능 출력을 회사 CAN 매핑(`Can list.xlsx`) 형식으로 내보낸다. 둘 중 하나:
+
+1. **JSONL** (권장): 한 줄에 객체 하나. `t_us`(주행 시작 기준 마이크로초, 오름차순)만 필수이고 나머지는 바뀐 값만 넣어도 된다. 경고·방향지시등은 이벤트 신호라 마지막 값을 유지한다. 시작 시 네 상태 코드를 한 번 모두 보낸다.
+   ```json
+   {"t_us": 0, "LaneSafe_indi": 4, "Careless_Warn": 0, "LTurnSig_Indi": 0, "RTurnSig_Indi": 0}
+   {"t_us": 100000, "speed_kmh": 99.8, "steering_deg": -0.4}
+   {"t_us": 15000000, "LaneSafe_indi": 5}
+   ```
+2. **BLF**: 회사 매핑 프레임. 속도 `0x102`(bit 56/8), 조향 `0x125`(bit 24/16, ×0.1°), 부주의 경고 `0x100` `Careless_Warn`(bit 24/4), 차선안전·방향지시등 `0x101` `LaneSafe_indi`(28/4)·`LTurnSig_Indi`(32/4)·`RTurnSig_Indi`(40/4). DBC: `git_upload_ver1/mapping/can_list.dbc`, `can_list_warnings.dbc`.
+
+값: `LaneSafe_indi` 0 Off / 1 Yellow / 2 GreenBlink / 3 Gray / 4 Green / 5 YellowWarn, `Careless_Warn` 0 Off / 1 Yellow / 2 YellowBlink / 3 YellowWarn, 방향지시등 0 Off / 1~3 점멸.
+
 ## 원본 기록 폴더 형식
 
 서버는 지정 폴더와 바로 아래 기록 폴더의 원본 쌍을 찾는다. 한국어 원본 이름과 `meta.json`이 한 쌍으로 명확하면 자동 조회한다. 여러 metadata가 있으면 `notes`에서 해당 `원본_*_YYYYMMDD_HHMMSS.csv`를 명시한 파일이 하나일 때만 연결한다. 시간상 가까운 파일이나 Hz를 추측하지 않는다.

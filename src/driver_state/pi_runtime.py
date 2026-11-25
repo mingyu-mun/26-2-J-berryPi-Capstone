@@ -80,8 +80,11 @@ def empty_input():
 
 
 class Runtime:
-    def __init__(self,config,backend,publisher,*,clock=time.monotonic,origin='live',synchronous=False,baseline_profile=None):
+    def __init__(self,config,backend,publisher,*,clock=time.monotonic,origin='live',synchronous=False,baseline_profile=None,
+                 can_assist=None):
         self.config,self.backend,self.publisher=config,backend,publisher
+        # Optional simulator-only CAN steering assist (can_assist.CanAssist); None keeps CAN unavailable.
+        self.can_assist=can_assist
         self.clock,self.origin=clock,origin
         self.baseline_profile=baseline_profile
         self.lock=RLock()
@@ -123,6 +126,9 @@ class Runtime:
             self.last_report=0.
             self.retry_at=None
             self.ppg_filter.reset()
+            self.confirmation=None
+            if self.can_assist is not None:
+                self.can_assist.reset()
             LOG.info('session_reset reason=%s session=%s',reason,self.session)
 
     @property
@@ -155,9 +161,9 @@ class Runtime:
             except DataUnavailable as exc:
                 self.reset(f'{channel}: {exc}')
 
-    def event(self,kind,t,payload):
+    def event(self,kind,t,payload,origin=None):
         return dict(schema_version='1.2',type=kind,session_id=self.session,
-                    origin=self.origin,t_rel_s=float(max(0,t)),payload=payload)
+                    origin=origin or self.origin,t_rel_s=float(max(0,t)),payload=payload)
 
     def _status(self,t):
         r=self.result
@@ -168,7 +174,7 @@ class Runtime:
         baseline_status=r['status'] if all(self.connections.values()) and all(b.samples for b in self.buffers.values()) else 'waiting'
         states={c:('unknown' if self.origin=='recorded' else 'connected' if ok else 'disconnected')
                 for c,ok in self.connections.items()}
-        states['can']='unknown'
+        states['can']='unknown' if self.can_assist is None else 'connected' if self.can_assist.receiving(t) else 'disconnected'
         states['model']='disconnected' if self.model_error else 'connected'
         bio_baseline=dict(status=baseline_status,clean_windows=int(r['clean_windows']),
             required_clean_windows=20,elapsed_s=float(elapsed))
@@ -176,7 +182,9 @@ class Runtime:
             bio_baseline['ecg_reference']=r['ecg_reference']
         return self.event('system.status',t,dict(
             bio_baseline=bio_baseline,
-            can_baseline=dict(status='unavailable',coverage_pct=None,elapsed_s=None),connections=states))
+            can_baseline=dict(status='ready' if self.can_assist is not None and self.can_assist.use_steering else 'unavailable',
+                coverage_pct=None,elapsed_s=None),
+            connections=states))
 
     def _wave(self,end):
         channels={}
@@ -224,7 +232,19 @@ class Runtime:
                 pass
         return signals,self.rates,start,end
 
-    def _work(self,args,generation):
+    @property
+    def can_origin(self):
+        return 'unavailable' if self.can_assist is None else self.can_assist.origin
+
+    def _confirmation(self,output,can_flag):
+        # Level 2 reached in a window whose CAN flag was True -> CAN confirmed; otherwise persistence.
+        if not output or output['level']!=2:
+            self.confirmation=None
+        elif self.confirmation is None:
+            self.confirmation='can' if can_flag is True else 'persistence'
+        return self.confirmation
+
+    def _work(self,args,generation,can_flag=None):
         began=time.perf_counter()
         try:
             if self.backend_generation!=generation:
@@ -232,7 +252,7 @@ class Runtime:
                 if self.baseline_profile is not None:
                     self.backend.restore_baseline(self.baseline_profile)
                 self.backend_generation=generation
-            result=self.backend.consume(*args)
+            result=self.backend.consume(*args,can_drowsy=can_flag) if self.can_assist is not None else self.backend.consume(*args)
             with self.lock:
                 if generation!=self.generation:
                     return
@@ -246,9 +266,9 @@ class Runtime:
                     output=result['output']
                     self.publisher.put(self.event('ai.decision',end,dict(
                         model_id='S1-EP',state_machine_id='v2',window_start_s=end-30,window_end_s=end,
-                        baseline_status=result['status'],bio_origin=self.origin,can_origin='unavailable',
+                        baseline_status=result['status'],bio_origin=self.origin,can_origin=self.can_origin,
                         input=inp,output=output,
-                        confirmation_source='persistence' if output and output['level']==2 else None)))
+                        confirmation_source=self._confirmation(output,inp.get('can_drowsy')))))
                 LOG.info('model elapsed_s=%.3f window_end_s=%.1f baseline=%s',time.perf_counter()-began,end,result['status'])
         except Exception as exc:
             with self.lock:
@@ -273,6 +293,10 @@ class Runtime:
             if wave_end>=1. and wave_end>self.last_wave:
                 self.publisher.put(self._wave(wave_end))
                 self.last_wave=wave_end
+            if self.can_assist is not None:
+                payload=self.can_assist.advance(now)
+                if payload is not None:
+                    self.publisher.put(self.event('can.telemetry',now,payload,origin=self.can_origin))
             if now-self.last_status>=1:
                 self.publisher.put(self._status(now))
                 self.last_status=now
@@ -282,10 +306,11 @@ class Runtime:
                 if args is not None:
                     generation=self.generation
                     self.last_job=end
+                    can_flag=self.can_assist.window_flag(end) if self.can_assist is not None else None
                     if self.pool:
-                        self.future=self.pool.submit(self._work,args,generation)
+                        self.future=self.pool.submit(self._work,args,generation,can_flag)
                     else:
-                        self._work(args,generation)
+                        self._work(args,generation,can_flag)
 
     def run(self):
         threads=[Thread(target=serial_reader,args=(self.config['serial'],self.emit,self.state,self.stop),daemon=True),
@@ -319,7 +344,7 @@ class Runtime:
             self.publisher.put(self.event('bio.wave',t,dict(ecg=None,ppg=None)))
             self.publisher.put(self.event('ai.decision',t,dict(model_id='S1-EP',state_machine_id='v2',
                 window_start_s=None,window_end_s=None,baseline_status='waiting',bio_origin=self.origin,
-                can_origin='unavailable',input=empty_input(),output=None,confirmation_source=None)))
+                can_origin=self.can_origin,input=empty_input(),output=None,confirmation_source=None)))
             self.publisher.put(self._status(t))
         self.publisher.flush()
         self.publisher.close()

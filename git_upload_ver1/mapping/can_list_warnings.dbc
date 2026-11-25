@@ -1,0 +1,10 @@
+VERSION "Can list.xlsx - vehicle warning / turn signal (CAN DB rows 9, 10, 16, 17)"
+NS_ :
+BS_:
+BU_: Source
+BO_ 256 WARN1: 8 Source
+ SG_ Careless_Warn : 24|4@1+ (1,0) [0|15] "" Source
+BO_ 257 INDI1: 8 Source
+ SG_ LaneSafe_indi : 28|4@1+ (1,0) [0|15] "" Source
+ SG_ LTurnSig_Indi : 32|4@1+ (1,0) [0|15] "" Source
+ SG_ RTurnSig_Indi : 40|4@1+ (1,0) [0|15] "" Source
