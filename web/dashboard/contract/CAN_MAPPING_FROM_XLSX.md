@@ -54,3 +54,4 @@
 6. **주기:** `Speed`/`CARINFO`=100ms, `SAS_angleVal`=10ms, `HOD_Dir_Status`=100ms, 방향지시등·페달·경고 표시 등은 **비주기(이벤트 기반)**. `can.telemetry` 하나의 수신 시각을 모든 값의 시각처럼 사용하지 않으며, 주요 네 값은 `signal_times_s`에 각각 측정시각을 기록한다.
 7. **물리값:** `ReGenBrakeLevel`은 회생제동 단계이지 브레이크 페달 입력 %가 아니다. `Odometer`는 누적 주행거리 km. 네 바퀴 공기압은 `psi`. RPM·차선 카메라의 차선 편차량·요 레이트는 **이 엑셀에 정의되지 않았다**.
 8. **CAN 교차 확인:** 이 엑셀은 CAN 신호 **디코딩 정의**만 제공하며 `can_drowsy=true`를 산출할 검증된 임계값이나 분류기는 제공하지 않는다. 따라서 별도 규칙이 없으면 `can_drowsy=null`; 차량 조향 신호가 있다는 이유로 자동 졸음 확정 금지.
+   - **2026-11-25 팀 결정 (시뮬레이터 한정):** `rule_id=vehicle_warning_sim_v1`로 시뮬레이터(`origin="simulated"`)의 차선 경고 `LaneSafe_indi=5`(방향지시등 구간 제외)와 부주의 경고 `Careless_Warn≥2`를 `can_drowsy=true` 보조 입력으로 쓴다. 4번 원칙대로 **정답 라벨로 쓰지 않으며**, 상태 머신 v2에서 생체 판정이 주의 이상일 때만 졸음 격상 근거가 된다. 검증된 실차 규칙이 아니므로 실차·기록 출처는 계속 `can_drowsy=null`. 근거: `src/driver_state/can_assist.py`, `docs/state-machine-v2.md` 8장.

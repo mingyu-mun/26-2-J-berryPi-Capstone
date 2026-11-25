@@ -80,21 +80,41 @@ bash pi_test.sh run
 
 ## 시뮬레이터 CAN 보조 확정 (`--can-sim`)
 
-생체 졸음 판정을 **시뮬레이터 CAN 조향 이탈**로 보조 확정한다. 실차 CAN 데이터셋과 실차 개인 기준이 없으므로 **시뮬레이터 출처(`origin="simulated"`)에서만** 동작한다.
+생체 졸음 판정을 **시뮬레이터 차량 경고(차선 경고·부주의 경고)**로 보조 확정한다. 실차 CAN 데이터셋과 실차 주행 기준이 없으므로 **시뮬레이터 출처(`origin="simulated"`)에서만** 동작한다. 차량 경고는 졸음 정답 라벨이 아니라 보조 입력이다.
 
 ```bash
-python scripts/run_dashboard.py --can-sim                       # 내장 합성 고속도로 주행 + 합성 개인 기준
-python scripts/run_dashboard.py --can-sim --can-sim-every 20    # 조향 이탈 간격(초) 조정
-python scripts/run_dashboard.py --can-sim-scenario drive.jsonl --can-sim-profile git_upload_ver1/data/profiles/P01.json
+python scripts/run_dashboard.py --can-sim                          # 내장 합성 주행 (Unity 없이 시연·시험)
+python scripts/run_dashboard.py --can-sim --can-sim-every 20       # 이상 상황 간격(초) 조정
+python scripts/run_dashboard.py --can-sim-scenario unity_drive.jsonl   # Unity 기록 (JSONL 또는 BLF)
+python scripts/run_dashboard.py --can-sim --can-sim-steering       # 선택: PR #13 개인 조향 기준 이탈도 조건에 추가
 ```
 
+**`can_drowsy` 규칙 (`rule_id=vehicle_warning_sim_v1`, `src/driver_state/can_assist.py`)** — 10초 판정 창마다:
+
+| 결과 | 조건 |
+|---|---|
+| `true` | 차선 경고 `LaneSafe_indi=5`(YellowWarn) — 단 방향지시등이 켜져 있거나 꺼진 뒤 3초 이내면 정상 차로 변경으로 제외 / 부주의 경고 `Careless_Warn≥2`(YellowBlink 이상) / (선택) 개인 조향 기준 이탈 |
+| `false` | 경고 없음, 경고 상태를 한 번 이상 받았고 창의 절반 이상 CAN 수신 |
+| `null` | 그 밖 (경고 상태 미수신, CAN 끊김), 또는 실차·기록 출처 |
+
+- 상태 머신 v2: 생체 판정이 **주의** 이상(점수 > 0.55, 잡음 동결 아님)일 때 `can_drowsy=true`면 바로 졸음으로 격상하고, 졸음 후보에서는 3분 추가 대기 없이 확정한다. 정상 단계에서는 CAN을 쓰지 않으므로 차량 경고만으로 경고를 시작하지 않는다. 이때 `confirmation_source="can"`. 주의 단계 격상은 `V2Config.can_from_caution=False`로 끌 수 있다 (`docs/state-machine-v2.md` 8장).
 - 판정 재생(기준 계산 제외)마다 CAN 시나리오가 재생 0초부터 같은 시계로 함께 흘러간다.
-- 조향 규칙은 `git_upload_ver1/steering_profile.py`(PR #13)의 개인 기준을 그대로 쓴다. 10초 판정 창 안에 개인 기준 이탈이 있으면 `can_drowsy=true`, 창의 절반 이상이 유효 직선 주행이고 이탈이 없으면 `false`, 그 밖에는 `null`.
-- `can_drowsy=true`는 생체 판정이 **주의** 이상이고(점수 > 0.55, 잡음 동결 아님) 졸음 후보 전이라도 바로 졸음으로 격상하고, **졸음 후보**에서는 3분 추가 대기 없이 확정한다. 정상 단계에서는 CAN을 쓰지 않으므로 CAN만으로 경고를 시작하지 않는다. 이때 `confirmation_source="can"`. 주의 단계 격상은 `V2Config.can_from_caution=False`로 끌 수 있다 (`docs/state-machine-v2.md` 8장).
-- 화면에는 `can_origin=simulated`일 때만 운전자 상태 아래에 `CAN 보조 (시뮬레이터)` 한 줄을 표시한다. 실차·기록 CAN은 표시하지 않는다.
-- 시나리오 파일: JSONL 한 줄에 `[stamp_us, speed_kmh, steering_deg]` (첫 표본 기준 마이크로초, dict 줄은 무시. `can_live.py --collect-normal` 기록과 같은 형식) 또는 회사 매핑 BLF(`python-can`, `cantools` 필요).
-- 외부 송신 모드에서는 `git_upload_ver1/can_live.py --origin simulated`가 같은 `deviation_status`·`can_drowsy`를 `can.telemetry`로 보낸다. 웹보드는 세션 ID 하나만 표시하므로 생체 송신기와 `--session-id`를 맞춰야 한다.
-- 내장 합성 주행은 Unity 대체 시연용이다. 성능 수치로 제시하지 않는다.
+- 화면에는 `can_origin=simulated`일 때만 운전자 상태 아래에 `차량 경고 (시뮬레이터)` 한 줄을 표시한다. `can.telemetry`의 `status_codes`에 네 신호 원시값을 싣는다. 실차·기록 CAN은 표시하지 않는다.
+- 내장 합성 주행: 20초부터 30초마다 차선 경고(1.5초)와 부주의 경고(3초)를 번갈아 내고, 35초부터 60초마다 방향지시등을 켠 차로 변경(그 안에서 차선 경고 1초, 제외 대상)을 넣는다. 시연용이며 성능 근거가 아니다.
+
+### Unity 출력 형식
+
+Unity의 차선 이탈 경고·부주의 경고 기능 출력을 회사 CAN 매핑(`Can list.xlsx`) 형식으로 내보낸다. 둘 중 하나:
+
+1. **JSONL** (권장): 한 줄에 객체 하나. `t_us`(주행 시작 기준 마이크로초, 오름차순)만 필수이고 나머지는 바뀐 값만 넣어도 된다. 경고·방향지시등은 이벤트 신호라 마지막 값을 유지한다. 시작 시 네 상태 코드를 한 번 모두 보낸다.
+   ```json
+   {"t_us": 0, "LaneSafe_indi": 4, "Careless_Warn": 0, "LTurnSig_Indi": 0, "RTurnSig_Indi": 0}
+   {"t_us": 100000, "speed_kmh": 99.8, "steering_deg": -0.4}
+   {"t_us": 15000000, "LaneSafe_indi": 5}
+   ```
+2. **BLF**: 회사 매핑 프레임. 속도 `0x102`(bit 56/8), 조향 `0x125`(bit 24/16, ×0.1°), 부주의 경고 `0x100` `Careless_Warn`(bit 24/4), 차선안전·방향지시등 `0x101` `LaneSafe_indi`(28/4)·`LTurnSig_Indi`(32/4)·`RTurnSig_Indi`(40/4). DBC: `git_upload_ver1/mapping/can_list.dbc`, `can_list_warnings.dbc`.
+
+값: `LaneSafe_indi` 0 Off / 1 Yellow / 2 GreenBlink / 3 Gray / 4 Green / 5 YellowWarn, `Careless_Warn` 0 Off / 1 Yellow / 2 YellowBlink / 3 YellowWarn, 방향지시등 0 Off / 1~3 점멸.
 
 ## 원본 기록 폴더 형식
 

@@ -174,7 +174,7 @@ class Runtime:
         baseline_status=r['status'] if all(self.connections.values()) and all(b.samples for b in self.buffers.values()) else 'waiting'
         states={c:('unknown' if self.origin=='recorded' else 'connected' if ok else 'disconnected')
                 for c,ok in self.connections.items()}
-        states['can']='unknown' if self.can_assist is None else 'connected' if self.can_assist.latest else 'disconnected'
+        states['can']='unknown' if self.can_assist is None else 'connected' if self.can_assist.receiving(t) else 'disconnected'
         states['model']='disconnected' if self.model_error else 'connected'
         bio_baseline=dict(status=baseline_status,clean_windows=int(r['clean_windows']),
             required_clean_windows=20,elapsed_s=float(elapsed))
@@ -182,7 +182,8 @@ class Runtime:
             bio_baseline['ecg_reference']=r['ecg_reference']
         return self.event('system.status',t,dict(
             bio_baseline=bio_baseline,
-            can_baseline=dict(status='ready' if self.can_assist is not None else 'unavailable',coverage_pct=None,elapsed_s=None),
+            can_baseline=dict(status='ready' if self.can_assist is not None and self.can_assist.use_steering else 'unavailable',
+                coverage_pct=None,elapsed_s=None),
             connections=states))
 
     def _wave(self,end):
