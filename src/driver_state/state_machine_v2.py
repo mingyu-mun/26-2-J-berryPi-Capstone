@@ -3,7 +3,7 @@
 10초마다 창 하나를 ``StateMachineV2.step`` 에 넣는다. 기존 v0.3 (state_machine.py) 은 그대로 둔다.
 
 흐름: 채널 선택(3장) → 3창 중앙값 → 신뢰도 가중 갱신(4장) → 잡음 동결(5장) → 단계 전이(6장)
-      → 졸음 확정(8장: CAN 또는 후보 지속 추가 3분). 기준 수집(2장)은 ``select_baseline``.
+      → 졸음 확정(8장: 주의·후보 단계의 CAN 또는 후보 지속 추가 3분). 기준 수집(2장)은 ``select_baseline``.
 """
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ class V2Config:
     t_down: float = 60.0             # 한 단계 하강
     t_hold: float = 60.0             # -1 연속 → 측정 불가
     t_confirm: float = 180.0         # CAN 없을 때 졸음 후보 → 졸음 확정 추가 지속
+    can_from_caution: bool = True    # 2026-11-25: 주의 단계에서도 CAN 졸음 징후로 졸음 조기 격상 (8장)
     med_n: int = 3
     conf_lo: float = 0.05            # q_ecg ≤ 이 값이면 c = 1
     conf_hi: float = 0.10            # q_ecg ≥ 이 값이면 ECG 불량
@@ -140,6 +141,10 @@ class StateMachineV2:
             elif self.cand and not frozen:
                 self.cand_t += c.dt
             if self.cand and (w.can_drowsy or self.cand_t >= c.t_confirm):
+                self.level = 2
+            elif c.can_from_caution and self.level == 1 and w.can_drowsy and not frozen:
+                # 실측에서 졸음 후보까지 거의 오르지 않아 주의 단계에서 CAN 으로 조기 격상 (2026-11-25).
+                # 생체 점수가 th_on 위이고 잡음 동결이 아닐 때만. 정상 단계에서는 CAN 을 쓰지 않는다.
                 self.level = 2
         elif self.score < c.th_off:
             self.up = 0.0

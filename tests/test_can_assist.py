@@ -125,6 +125,7 @@ def first(events, pred):
 
 def test_can_confirms_drowsy_earlier_than_persistence(profile):
     base = replay(None)
+    caution = first(base, lambda p: p['output']['level'] == 1)['output']['t']
     cand = first(base, lambda p: p['output']['candidate'])['output']['t']
     persist = first(base, lambda p: p['output']['level'] == 2)
     assert persist['confirmation_source'] == 'persistence' and persist['can_origin'] == 'unavailable'
@@ -134,10 +135,11 @@ def test_can_confirms_drowsy_earlier_than_persistence(profile):
     confirmed = first(with_can, lambda p: p['output']['level'] == 2)
     assert confirmed['confirmation_source'] == 'can' and confirmed['can_origin'] == 'simulated'
     assert confirmed['input']['can_drowsy'] is True
-    assert cand < confirmed['output']['t'] <= cand + 30
-    # Deviations before the bio candidate never raise the level by themselves.
-    early = [p for p in decisions(with_can) if p['output']['t'] < cand]
-    assert any(p['input']['can_drowsy'] for p in early) and all(p['output']['level'] < 2 for p in early)
+    # Escalates from caution (before any candidate) on the next deviation window.
+    assert caution < confirmed['output']['t'] <= caution + 30 and confirmed['output']['t'] < cand
+    # Deviations while the bio state is still normal never raise the level by themselves.
+    early = [p for p in decisions(with_can) if p['output']['t'] < caution]
+    assert any(p['input']['can_drowsy'] for p in early) and all(p['output']['level'] == 0 for p in early)
 
 
 def test_live_can_keeps_persistence_path(profile):

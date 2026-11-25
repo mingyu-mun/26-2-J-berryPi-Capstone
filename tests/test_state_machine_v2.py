@@ -66,6 +66,30 @@ def test_can_confirms_early():
     assert first(out, lambda o: o.level == 2) - 300 <= 160
 
 
+def test_can_escalates_from_caution():
+    ps = [0.2] * 30 + [0.8] * 30
+    base = run(ps)
+    caution = first(base, lambda o: o.level == 1)
+    assert caution is not None and first(base, lambda o: o.candidate) > caution
+    sm = StateMachineV2(V2Config())
+    out = [sm.step(WindowIn(t=10.0 * (i + 1), p_ep=p, q_ecg=0.0, can_drowsy=10.0 * (i + 1) > caution))
+           for i, p in enumerate(ps)]
+    t2 = first(out, lambda o: o.level == 2)
+    assert t2 == caution + 10                                         # 주의 다음 창에서 바로 졸음
+    assert not any(o.candidate for o in out if o.t <= t2)
+
+
+def test_can_ignored_at_normal_level_and_when_disabled():
+    assert max(o.level for o in run([0.2] * 30, can_drowsy=True)) == 0   # 정상 단계에서는 CAN 무시
+    ps = [0.2] * 30 + [0.8] * 9                                           # 주의까지만 오르는 길이
+    sm = StateMachineV2(V2Config(can_from_caution=False))
+    out = [sm.step(WindowIn(t=10.0 * (i + 1), p_ep=p, q_ecg=0.0, can_drowsy=True)) for i, p in enumerate(ps)]
+    assert max(o.level for o in out) == 1 and not any(o.candidate for o in out)
+    sm = StateMachineV2(V2Config())                                       # 같은 입력, 기본 설정이면 격상
+    assert max(sm.step(WindowIn(t=10.0 * (i + 1), p_ep=p, q_ecg=0.0, can_drowsy=True)).level
+               for i, p in enumerate(ps)) == 2
+
+
 def test_select_baseline():
     t = np.arange(0, 900, 10.0)
     ok, idx, (a, b) = select_baseline(t, np.zeros(len(t)))
