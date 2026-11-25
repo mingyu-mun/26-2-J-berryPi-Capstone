@@ -300,7 +300,7 @@ namespace CapstoneSim
                 SimTheme.Bar(bar, Mathf.Max(0, r.p_used), pcol);
                 Tick(bar, r.th_on, "on", 1f); Tick(bar, r.th_off, "off", 0.55f);
                 y += 38;
-                string conf = r.level == 2 ? (r.confirmed ? "   ·   차량 경고로 확정" : "   ·   차량 경고 대기") : "";
+                string conf = r.level == 2 ? (r.confirmed ? "   ·   졸음 확정 (AI 모델 졸음 + 차량 경고)" : "   ·   차량 경고 대기") : "";
                 SimTheme.Label(new Rect(x, y, w, 20), $"채널 {r.channel}   EP {V(r.p_ep, "F2")}   PPG {V(r.p_ppg, "F2")}   신뢰도 {V(r.confidence, "F2")}{conf}", 13, SimTheme.Sub);
                 y += 28;
             }
@@ -413,7 +413,7 @@ namespace CapstoneSim
             string tag = confirmed ? "졸음 확정" : drowsy ? "졸음" : "주의";
             float tw = Mathf.Max(96f, SimTheme.DisplayWidth(tag, 30) + 32f);
             SimTheme.Plate(new Rect(r.x + 14, r.y + 14, tw, 48), tag, SimTheme.A(c, pulse > 0.9f ? 1f : 0.85f), 30);
-            SimTheme.Display(new Rect(r.x + tw + 32, r.y, r.width - tw - 44, r.height), confirmed ? "차량 경고까지 겹쳤습니다. 바로 쉬어 가세요" : drowsy ? "졸음 상태입니다. 쉬어 가세요" : "졸음 징후가 있습니다", w < 560 ? 20 : 25, SimTheme.Text);
+            SimTheme.Display(new Rect(r.x + tw + 32, r.y, r.width - tw - 44, r.height), confirmed ? "(AI 모델 졸음 + 차량 경고)" : drowsy ? "졸음 상태입니다. 쉬어 가세요" : "졸음 징후가 있습니다", w < 560 ? 20 : 25, SimTheme.Text);
         }
     }
 }
