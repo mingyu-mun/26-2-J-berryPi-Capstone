@@ -52,7 +52,8 @@ def main():
         config = load_config(args.config)
         backend = CausalStudent(ROOT / 'models', feature_mode=config['inference']['feature_mode'],
                                 experimental=config['inference']['experimental'],
-                                threads=config['inference'].get('threads', 1))
+                                threads=config['inference'].get('threads', 1),
+                                rpeak_threshold=config['inference'].get('rpeak_threshold', 'global'))
         logging.info('실행 환경: %s / %s / Python %s', platform.system(), platform.machine(), platform.python_version())
         logging.info('S1-EP 가중치 %d개 CPU 로딩 완료', len(backend.models))
         if args.check:

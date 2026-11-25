@@ -15,7 +15,8 @@ LOG = logging.getLogger(__name__)
 
 
 class LocalReplay:
-    def __init__(self, engine, library, recordings_dir, model_dir=ROOT/'models', backend_factory=None, can_assist_factory=None):
+    def __init__(self, engine, library, recordings_dir, model_dir=ROOT/'models', backend_factory=None, can_assist_factory=None,
+                 rpeak_threshold='global'):
         self.engine, self.library = engine, library
         # Simulator-only CAN assist for judgment replays (not used while calibrating the bio baseline).
         self.can_assist_factory = can_assist_factory
@@ -23,6 +24,7 @@ class LocalReplay:
         self.profiles = ModelProfileStore(library)
         self.model_dir = Path(model_dir)
         self.backend_factory = backend_factory
+        self.rpeak_threshold = rpeak_threshold
         self.backend = None
         self.lock = RLock()
         self.condition = Condition(self.lock)
@@ -66,8 +68,12 @@ class LocalReplay:
         cfg = self.config(recording)
         # Source rates are provenance, not a personal identity. The same code
         # resamples each source using its own metadata to common/model rates.
-        return dict(common_fs_hz=100., serial={k:cfg['serial'][k] for k in ('adc_max','vref_mv')},
-                    ppg={k:cfg['ppg'][k] for k in ('fs_hz','finger_threshold')}, clock='sample_index')
+        processing = dict(common_fs_hz=100., serial={k:cfg['serial'][k] for k in ('adc_max','vref_mv')},
+                          ppg={k:cfg['ppg'][k] for k in ('fs_hz','finger_threshold')}, clock='sample_index')
+        if self.rpeak_threshold != 'global':
+            # A baseline computed with another R-peak threshold is a different input; never mix them.
+            processing['rpeak_threshold'] = self.rpeak_threshold
+        return processing
 
     def select(self, user_id, recording_id):
         user = self.library.user(user_id) if user_id else None
@@ -165,7 +171,8 @@ class LocalReplay:
                     self.backend=self.backend_factory()
                 else:
                     from .streaming_model import CausalStudent
-                    self.backend=CausalStudent(self.model_dir,feature_mode='causal_trailing_v1',experimental=True)
+                    self.backend=CausalStudent(self.model_dir,feature_mode='causal_trailing_v1',experimental=True,
+                                                rpeak_threshold=self.rpeak_threshold)
             clock=[0.]
             can_assist=None
             if self.can_assist_factory is not None and self.state['mode']!='calibrate':

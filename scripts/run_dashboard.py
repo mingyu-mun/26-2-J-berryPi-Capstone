@@ -27,6 +27,9 @@ def main():
     parser.add_argument('--can-sim-steering', action='store_true',
                         help='선택: PR #13 개인 조향 기준 이탈도 can_drowsy 조건에 추가')
     parser.add_argument('--can-sim-steering-profile', help='--can-sim-steering 용 개인 조향 기준 data/profiles/<ID>.json. 없으면 합성 기준')
+    parser.add_argument('--rpeak-threshold', choices=('global', 'rolling'), default='global',
+                        help='ECG R-peak 높이 임계. global=학습과 같음(버퍼 전체), rolling=과거 10초 블록 중앙값(실시간 시험용). '
+                             '바꾸면 기준을 다시 계산해야 합니다.')
     args = parser.parse_args()
     if not 0 <= args.port <= 65535:
         parser.error("port는 0~65535 범위여야 합니다.")
@@ -38,7 +41,7 @@ def main():
     try:
         options = {'library_dir': args.data_dir} if args.data_dir else {}
         if not args.external_events:
-            options.update(recordings_dir=args.recordings_dir,model_dir=args.models)
+            options.update(recordings_dir=args.recordings_dir,model_dir=args.models,rpeak_threshold=args.rpeak_threshold)
             if args.can_sim or args.can_sim_scenario:
                 from driver_state.can_assist import build_can_assist
                 can_options = dict(steering_profile=args.can_sim_steering_profile, use_steering=args.can_sim_steering,
@@ -54,6 +57,8 @@ def main():
     print(f"같은 네트워크: http://<Pi IP>:{server.server_port} / 종료: Ctrl+C", flush=True)
     print('외부 이벤트 수신 모드: 기존 송신 프로그램을 /api/events에 연결하세요.' if args.external_events else
           '로컬 기록 모드: 사용자 설정·시작에서 원본과 기준을 선택하세요.', flush=True)
+    if args.rpeak_threshold != 'global' and not args.external_events:
+        print(f'R-peak 임계: {args.rpeak_threshold} (실시간 시험용). 기준은 이 설정으로 다시 계산하세요.', flush=True)
     if 'can_assist_factory' in options:
         print('시뮬레이터 CAN 보조 확정 켜짐: 판정 재생에서 차선 경고·부주의 경고를 can_drowsy로 전달합니다 (시뮬레이터 전용).', flush=True)
     try:
