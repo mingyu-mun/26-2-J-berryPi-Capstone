@@ -1,0 +1,8 @@
+# J_Berry PI 저장소 추론 경로(scripts/infer_bundle.py)에 필요한 최소 패키지
+numpy
+scipy
+pandas
+scikit-learn
+pyyaml
+safetensors
+# torch 는 CPU 판을 따로 설치 (setup_env.py: --index-url https://download.pytorch.org/whl/cpu)
