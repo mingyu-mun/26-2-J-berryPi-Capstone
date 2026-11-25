@@ -396,7 +396,7 @@ function render() {
   $('decisionChannel').textContent = {EP: 'ECG + PPG', PPG: 'PPG 대체', none: '판정 불가'}[output?.channel] || '미수신';
   $('candidateValue').textContent = output ? output.level === 1 && output.candidate ? '졸음 후보' : '해당 없음' : '미수신';
   $('freezeValue').textContent = output ? output.frozen ? '보류 중' : '없음' : '미수신';
-  $('confirmationSource').textContent = {persistence: '생체 변화 지속', can: ai?.can_origin === 'simulated' ? '차량 경고' : '외부 확인'}[ai?.confirmation_source] || '미수신';
+  $('confirmationSource').textContent = {persistence: '생체 변화 지속', can: ai?.can_origin === 'simulated' ? 'AI 모델 졸음 + 차량 경고' : '외부 확인'}[ai?.confirmation_source] || '미수신';
   renderCanAssist(view);
   const connections = view.system?.payload.connections, connectionName = {connected: '연결', disconnected: '끊김', unknown: '미확인'};
   $('bioConnections').textContent = connections ? `ECG ${connectionName[connections.ecg]} · PPG ${connectionName[connections.ppg]}` : '미수신';
