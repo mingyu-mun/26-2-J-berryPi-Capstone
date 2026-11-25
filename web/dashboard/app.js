@@ -396,7 +396,7 @@ function render() {
   $('decisionChannel').textContent = {EP: 'ECG + PPG', PPG: 'PPG 대체', none: '판정 불가'}[output?.channel] || '미수신';
   $('candidateValue').textContent = output ? output.level === 1 && output.candidate ? '졸음 후보' : '해당 없음' : '미수신';
   $('freezeValue').textContent = output ? output.frozen ? '보류 중' : '없음' : '미수신';
-  $('confirmationSource').textContent = {persistence: '생체 변화 지속', can: ai?.can_origin === 'simulated' ? '차량 경고 (시뮬레이터)' : '외부 확인'}[ai?.confirmation_source] || '미수신';
+  $('confirmationSource').textContent = {persistence: '생체 변화 지속', can: ai?.can_origin === 'simulated' ? '차량 경고' : '외부 확인'}[ai?.confirmation_source] || '미수신';
   renderCanAssist(view);
   const connections = view.system?.payload.connections, connectionName = {connected: '연결', disconnected: '끊김', unknown: '미확인'};
   $('bioConnections').textContent = connections ? `ECG ${connectionName[connections.ecg]} · PPG ${connectionName[connections.ppg]}` : '미수신';
@@ -463,7 +463,7 @@ function renderCanAssist(view) {
   if (p?.deviation_status === 'outside_baseline') parts.push('조향 기준 이탈');
   const label = !p ? '수신 지연' : p.can_drowsy ? parts.join(' · ') || '경고 발생' : parts.length ? parts.join(' · ') : p.can_drowsy === false ? '경고 없음' : '판정 불가';
   const reading = p && finite(p.speed_kmh) ? ` · ${value(p.speed_kmh, 0)} km/h` : '';
-  el.textContent = `차량 경고 (시뮬레이터): ${label}${reading}`;
+  el.textContent = `차량 경고: ${label}${reading}`;
   el.dataset.status = p?.can_drowsy ? 'outside_baseline' : 'within_baseline';
 }
 

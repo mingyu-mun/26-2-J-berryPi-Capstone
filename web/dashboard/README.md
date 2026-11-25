@@ -99,7 +99,7 @@ python scripts/run_dashboard.py --can-sim --can-sim-steering       # 선택: PR 
 
 - 상태 머신 v2: 생체 판정이 **주의** 이상(점수 > 0.55, 잡음 동결 아님)일 때 `can_drowsy=true`면 바로 졸음으로 격상하고, 졸음 후보에서는 3분 추가 대기 없이 확정한다. 정상 단계에서는 CAN을 쓰지 않으므로 차량 경고만으로 경고를 시작하지 않는다. 이때 `confirmation_source="can"`. 주의 단계 격상은 `V2Config.can_from_caution=False`로 끌 수 있다 (`docs/state-machine-v2.md` 8장).
 - 판정 재생(기준 계산 제외)마다 CAN 시나리오가 재생 0초부터 같은 시계로 함께 흘러간다.
-- 화면에는 `can_origin=simulated`일 때만 운전자 상태 아래에 `차량 경고 (시뮬레이터)` 한 줄을 표시한다. `can.telemetry`의 `status_codes`에 네 신호 원시값을 싣는다. 실차·기록 CAN은 표시하지 않는다.
+- 화면에는 `can_origin=simulated`일 때만 운전자 상태 아래에 `차량 경고: …` 한 줄을 표시한다(화면에는 시뮬레이터 표기를 하지 않고 발표에서 설명). `can.telemetry`의 `status_codes`에 네 신호 원시값을 싣는다. 실차·기록 CAN은 표시하지 않는다.
 - 내장 합성 주행: 20초부터 30초마다 차선 경고(1.5초)와 부주의 경고(3초)를 번갈아 내고, 35초부터 60초마다 방향지시등을 켠 차로 변경(그 안에서 차선 경고 1초, 제외 대상)을 넣는다. 시연용이며 성능 근거가 아니다.
 
 ### Unity 출력 형식
