@@ -1,0 +1,14 @@
+{
+  "35": {
+    "observations": 4,
+    "threshold_m_s2": 2.3944444444444444
+  },
+  "50": {
+    "observations": 4,
+    "threshold_m_s2": 2.3944444444444444
+  },
+  "65": {
+    "observations": 4,
+    "threshold_m_s2": 2.3944444444444444
+  }
+}
