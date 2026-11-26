@@ -18,7 +18,7 @@
   </header>
   <main>
     <details id="replayPanel" class="replay-panel" open>
-      <summary><span class="panel-label">설정·재생 제어</span><span class="replay-summary"><span id="summaryUser">사용자 미선택</span><span id="summaryProfile">기준 미적용</span><span id="summaryRecording">기록 미선택</span><span id="summaryPlayback">대기</span></span><span id="foldLabel" class="fold-label">접기</span></summary>
+      <summary><span class="panel-label">설정·재생 제어</span><span class="replay-summary"><span id="summaryUser">사용자 미선택</span><span id="summaryProfile">기준 미적용</span><span id="summaryRecording">기록 미선택</span><span id="summaryPlayback">대기</span></span><span id="foldLabel" class="fold-label" aria-hidden="true">▴</span></summary>
       <div class="replay-panel-body">
     <dl class="workspace" aria-label="현재 시험 대상">
       <div><dt>사용자</dt><dd id="activeUser">선택 없음</dd></div><div><dt>적용 기준</dt><dd id="activeProfile">적용 없음</dd></div>
@@ -39,14 +39,14 @@
       <div class="instrument heart-instrument">
         <div class="instrument-label">심박수 <span>ECG</span></div>
         <div class="dial">
-          <svg id="heartDial" class="dial-svg" viewBox="0 0 280 245" role="img" aria-label="심박수 눈금" aria-describedby="heartBandBasis heartBandComparison">
+          <svg id="heartDial" class="dial-svg" viewBox="0 0 280 245" role="img" aria-label="심박수 눈금" aria-describedby="heartReferenceDetail heartBandComparison">
             <path class="heart-reference-track" d="M 55.15 224.85 A 120 120 0 1 1 224.85 224.85"/><g id="heartReferenceBand" hidden></g><line id="heartReferenceMark" class="heart-reference-mark" hidden/><circle id="heartCurrentMark" class="heart-current-mark" r="5" hidden/>
             <path class="dial-track" d="M 63.63 216.37 A 108 108 0 1 1 216.37 216.37"/><g class="dial-ticks"></g><path class="dial-value" pathLength="100" d="M 63.63 216.37 A 108 108 0 1 1 216.37 216.37" hidden/>
           </svg>
           <div class="dial-reading"><strong id="ecgHr">··</strong><span>BPM</span></div>
         </div>
         <div class="secondary-reading"><span>PPG 맥박수</span><strong><span id="ppgHr">··</span><small> BPM</small></strong></div>
-        <div class="heart-reference-info"><div class="heart-reference-reading"><span id="heartReferenceText">기준 평균 수신 대기</span><strong id="heartDelta">··</strong></div><div id="heartBandLegend" class="heart-band-legend" hidden><span>기준 근접</span><span>편차 증가</span><span>큰 편차</span></div><p id="heartBandBasis" hidden></p></div>
+        <div class="heart-reference-info"><div class="heart-reference-reading"><span id="heartReferenceText">기준 평균 수신 대기</span><strong id="heartDelta">··</strong></div></div>
       </div>
       <div id="stateModule" class="driver-state" data-state="waiting">
         <div class="state-orbit" aria-hidden="true"><svg viewBox="0 0 84 84"><circle cx="42" cy="42" r="34"/><path d="M24 43h10l5-13 8 25 5-12h8"/></svg></div>

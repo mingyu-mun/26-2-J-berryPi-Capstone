@@ -9,6 +9,22 @@ let localStatus = {available: false}, users = [], profileItems = [], recordings 
 const setup = {step: 0, drafts: new Map(), pendingStart: null};
 let transport = '연결 대기', transportState = 'unknown';
 let rows = [], position = 0, playing = false, playTimer = null, resultContext = null, resultLoadEpoch = 0;
+let replaySummaryLayoutKey = '';
+// Presentation names keep persisted profiles and recording identifiers stable.
+const profileDisplayNames = new Map([
+  ['USER1', new Map([['123', 'BASELINE1']])],
+  ['USER2', new Map([['서맥유저기준', 'BASELINE2']])],
+]);
+const recordingDisplayNames = new Map([
+  ['2026-11-14_172641_s1', {name: 'RECORDING1', synthetic: false}],
+  ['VIRTUAL_B_50BPM_ALL_SYNTHETIC_NOT_SENSOR_DATA', {name: 'RECORDING2', synthetic: true}],
+]);
+function profileDisplayName(profile, user = localStatus.user) {
+  return profileDisplayNames.get(user?.nickname?.trim().toUpperCase())?.get(profile?.title) || profile?.title || '';
+}
+function recordingDisplayName(recording) {
+  return recordingDisplayNames.get(recording?.source_session_id)?.name || recording?.title || '';
+}
 const heartSegments = []; let heartBandKey = '';
 const schemaReady = fetch('contract/webboard_event_v1_2.schema.json', {cache: 'no-store'}).then(async r => {
   if (!r.ok) throw new Error('입력 규약을 읽을 수 없습니다.'); schema = await r.json();
@@ -105,7 +121,7 @@ async function refreshProfiles() {
     const data = await api(`/api/users/${id}/model-profiles`);
     if (query !== profileQuery || id !== localStatus.user?.id) return;
     profileItems = data.profiles;
-    for (const item of profileItems) $('profileSelect').add(new Option(`${item.title} · ${new Date(item.created_at).toLocaleString('ko-KR')}`, item.id));
+    for (const item of profileItems) $('profileSelect').add(new Option(`${profileDisplayName(item)} · ${new Date(item.created_at).toLocaleString('ko-KR')}`, item.id));
     const d = draft();
     if (!d.route) d.route = profileItems.length ? 'saved' : 'new';
     if (!d.profileId) d.profileId = localStatus.profile?.profile_id || profileItems[0]?.id || '';
@@ -129,7 +145,12 @@ async function refreshRecordings() {
   $('catalogErrors').textContent = data.errors.join('\n');
   for (const id of ['baselineRecordSelect', 'replayRecordSelect']) {
     $(id).replaceChildren(new Option(recordings.length ? '원본 기록을 선택하세요' : '원본 기록이 없습니다', ''));
-    for (const item of recordings) $(id).add(new Option(`${item.title} · ${item.source_session_id}`, item.id));
+    for (const item of recordings) {
+      const label = recordingDisplayNames.has(item.source_session_id) ? recordingDisplayName(item) : `${item.title} · ${item.source_session_id}`;
+      const option = new Option(label, item.id);
+      option.title = `${item.title} · ${item.source_session_id}`;
+      $(id).add(option);
+    }
   }
   restoreDraft();
   render();
@@ -288,9 +309,9 @@ function renderSetup() {
   $('baselineSelectionHint').textContent = locked ? (s.can_save ? '계산이 완료됐습니다. 다음 단계에서 기준을 저장하거나 계산을 취소한 뒤 기록을 바꾸세요.' : '기준 계산 진행 중입니다. 계산을 취소한 뒤 기록을 바꿀 수 있습니다.') : '선택만으로 계산을 시작하지 않습니다. 다음 단계에서 시작하세요.';
   for (const [id, target] of [[d.baselineId, 'baselineRecordsInfo'], [d.replayId, 'replayRecordsInfo']]) {
     const r = record(id);
-    $(target).textContent = r ? `${r.title} · ECG ${r.rates.ecg} Hz · PPG ${r.rates.ppg} Hz` : '원본 ECG·PPG와 메타정보가 있는 기록을 선택해주세요. 목록에 없으면 아래 원본 폴더 안내를 펼치세요.';
+    $(target).textContent = r ? `${recordingDisplayName(r)} · ECG ${r.rates.ecg} Hz · PPG ${r.rates.ppg} Hz${recordingDisplayNames.get(r.source_session_id)?.synthetic ? ' · 가상 데이터(실측 아님)' : ''}` : '원본 ECG·PPG와 메타정보가 있는 기록을 선택해주세요. 목록에 없으면 아래 원본 폴더 안내를 펼치세요.';
   }
-  $('calibrationRecord').textContent = `기준용 기록: ${record(d.baselineId)?.title || '선택 없음'}`;
+  $('calibrationRecord').textContent = `기준용 기록: ${recordingDisplayName(record(d.baselineId)) || '선택 없음'}`;
   $('baselineSpeedSelect').disabled = busy || locked;
   $('calibrationProgress').value = s.mode === 'calibrate' ? Math.min(s.position_s, 600) : 0;
   if (s.can_save || calibrationSaved()) $('calibrationProgress').value = 600;
@@ -301,10 +322,10 @@ function renderSetup() {
   $('calibrationStop').disabled = busy || s.mode !== 'calibrate';
   $('calibrationControlHint').textContent = calibrationActive() ? '일시정지 후 재개할 수 있습니다. 계산 취소는 현재 계산과 저장 전 결과를 초기화합니다.' : s.can_save ? '계산 완료. 아래에서 기준을 저장하세요. 취소하면 저장 전 결과를 비웁니다.' : '진행 중인 기준 계산이 있을 때 일시정지할 수 있습니다.';
   $('profileTitle').disabled = busy || !s.can_save;
-  $('saveSummary').textContent = s.can_save ? `${s.user?.nickname} · 기준 계산 완료 · 유효 ${s.clean_windows}창 · 아직 저장하지 않았습니다.` : calibrationSaved() ? `${s.profile.title} · 기준 저장 완료` : '저장할 계산 결과가 없습니다.';
+  $('saveSummary').textContent = s.can_save ? `${s.user?.nickname} · 기준 계산 완료 · 유효 ${s.clean_windows}창 · 아직 저장하지 않았습니다.` : calibrationSaved() ? `${profileDisplayName(s.profile)} · 기준 저장 완료` : '저장할 계산 결과가 없습니다.';
   $('saveHint').textContent = s.can_save ? d.title.trim() ? '아래 저장 버튼을 누르면 사용자에게 모델용 기준을 보관합니다.' : '저장할 기준 이름을 입력해주세요.' : calibrationSaved() ? '이미 저장한 기준입니다. 다음 단계로 진행할 수 있습니다.' : '기준 계산 완료 후 저장할 수 있습니다.';
-  $('reviewUser').textContent = s.user?.nickname || '선택 없음'; $('reviewProfile').textContent = s.profile ? `${s.profile.title} · ${s.profile_applied ? '적용 중' : '불러오기 완료'}` : '불러온 모델용 기준 없음';
-  $('reviewBaselineRecord').textContent = current?.metadata.recording?.title || (d.route === 'new' ? record(d.baselineId)?.title : null) || '저장 기준의 출처 기록 미확인';
+  $('reviewUser').textContent = s.user?.nickname || '선택 없음'; $('reviewProfile').textContent = s.profile ? `${profileDisplayName(s.profile)} · ${s.profile_applied ? '적용 중' : '불러오기 완료'}` : '불러온 모델용 기준 없음';
+  $('reviewBaselineRecord').textContent = recordingDisplayName(current?.metadata.recording) || (d.route === 'new' ? recordingDisplayName(record(d.baselineId)) : null) || '저장 기준의 출처 기록 미확인';
   $('replayReady').textContent = s.mode === 'replay' ? phaseText(board.view()) : '선택한 기준을 유지하고 판정할 입력 기록을 새로 처리합니다.';
   $('speedSelect').disabled = busy; $('refreshRecordings').disabled = busy || !s.available;
   $('setupBack').disabled = busy || setup.step === 0;
@@ -356,9 +377,9 @@ function profileLabel() {
   if (s.mode === 'calibrate') {
     if (s.baseline_status !== 'ready') return '새 기준 계산 중';
     if (s.can_save || !s.profile) return '새 기준 · 저장 전';
-    return `${s.profile.title} · 계산·저장 완료`;
+    return `${profileDisplayName(s.profile)} · 계산·저장 완료`;
   }
-  return s.profile ? `${s.profile.title} · ${s.profile_applied ? '적용 중' : '불러옴'}` : '적용 없음';
+  return s.profile ? `${profileDisplayName(s.profile)} · ${s.profile_applied ? '적용 중' : '불러옴'}` : '적용 없음';
 }
 function phaseText(view) {
   const s = localStatus;
@@ -366,8 +387,23 @@ function phaseText(view) {
   if (!s.available) return view.baseline === 'collecting' ? '수신 데이터로 기준 측정 중' : '외부 수신 데이터 보기';
   if (s.error) return s.error;
   if (s.mode === 'calibrate') return s.stage === 'baseline_ready' ? (s.can_save ? `기준 계산 완료 · 유효 ${s.clean_windows}창 · 저장 가능` : '모델 기준 저장 완료') : `기준 계산 중 · 유효 ${s.clean_windows} / 20창 · ${stamp(s.position_s)}`;
-  if (s.mode === 'replay') return s.profile_applied ? (s.input_ready ? '저장 기준 적용 완료 · 현재 입력 준비 완료' : `저장 기준 적용 완료 · 약 5분의 현재 입력 준비 중 (${stamp(s.position_s)})`) : '선택한 기준과 원본을 준비하고 있습니다.';
+  if (s.mode === 'replay') return s.profile_applied ? '' : '선택한 기준과 원본을 준비하고 있습니다.';
   return s.profile ? '모델 기준 불러오기 완료 · 재생 시작 대기' : '기준을 선택하거나 새로 측정하세요.';
+}
+function fitReplaySummary() {
+  const summary = $('replayPanel').querySelector('summary');
+  const key = `${summary.clientWidth}|${innerWidth}|${summary.textContent}`;
+  if (key === replaySummaryLayoutKey) return;
+  replaySummaryLayoutKey = key;
+  summary.style.removeProperty('--summary-scale');
+  if (matchMedia('(max-width:760px)').matches) return;
+  const labels = [...summary.querySelectorAll('.replay-summary>span')];
+  const style = getComputedStyle(summary), rowStyle = getComputedStyle(summary.querySelector('.replay-summary'));
+  const available = summary.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+    - parseFloat(style.columnGap) * 2 - $('foldLabel').offsetWidth
+    - parseFloat(rowStyle.columnGap) * (labels.length - 1);
+  const textWidth = summary.querySelector('.panel-label').scrollWidth + labels.reduce((total, label) => total + label.scrollWidth, 0);
+  summary.style.setProperty('--summary-scale', Math.min(1, Math.max(.5, (available - 4) / textWidth)).toFixed(4));
 }
 function render() {
   const view = board.view(), ai = view.ai?.payload, output = ai?.output;
@@ -378,16 +414,21 @@ function render() {
   $('transportLabel').textContent = transport; $('transportDot').dataset.status = transportState;
   $('activeUser').textContent = source === 'file' ? resultContext?.nickname || '파일의 사용자 정보 없음' : external ? '송신 프로그램 관리' : localStatus.user?.nickname || '선택 없음';
   $('activeProfile').textContent = source === 'file' ? '결과 파일의 기준 정보 · 모델 실행 없음' : external ? view.baseline === 'ready' ? '송신측 기준 준비 완료' : '송신측 기준 정보 대기' : profileLabel();
-  $('activeRecording').textContent = source === 'file' ? resultContext?.title || '기록 파일' : external ? '외부 이벤트' : localStatus.recording?.title || '선택 없음';
+  $('activeRecording').textContent = source === 'file' ? resultContext?.title || '기록 파일' : external ? '외부 이벤트' : recordingDisplayName(localStatus.recording) || '선택 없음';
   $('activePlayback').textContent = source === 'file' ? playing ? '결과 재생 중' : position >= rows.length ? '결과 끝' : '결과 재생 대기' : external ? view.session ? '외부 이벤트 수신' : '수신 대기' : stageName[localStatus.stage] || '대기';
   for (const id of ['activeUser', 'activeProfile', 'activeRecording']) $(id).title = $(id).textContent;
   for (const [summary, active, prefix] of [['summaryUser', 'activeUser', '사용자'], ['summaryProfile', 'activeProfile', '기준'], ['summaryRecording', 'activeRecording', '입력'], ['summaryPlayback', 'activePlayback', '상태']]) {
     $(summary).textContent = `${prefix}: ${$(active).textContent}`; $(summary).title = $(summary).textContent;
   }
+  fitReplaySummary();
   $('stateModule').dataset.state = state.kind; $('driverState').textContent = state.name; $('stateDescription').textContent = state.detail;
   $('stateDescription').hidden = !state.detail;
-  $('baselinePhase').textContent = phaseText(view); $('inputState').textContent = source === 'file' ? '결과 기록' : external ? view.session ? '외부 이벤트 표시' : '외부 이벤트 대기' : local ? stageName[localStatus.stage] : '입력 대기';
-  $('ecgHr').textContent = value(view.hrEcg); $('ppgHr').textContent = value(view.hrPpg); updateDial('heartDial', view.hrEcg, 40, 180); renderHeartBand(view);
+  const phase = phaseText(view);
+  $('baselinePhase').textContent = phase; $('baselinePhase').hidden = !phase;
+  $('inputState').textContent = source === 'file' ? '결과 기록' : external ? view.session ? '외부 이벤트 표시' : '외부 이벤트 대기' : local ? stageName[localStatus.stage] : '입력 대기';
+  const heartReading = value(view.hrEcg);
+  $('ecgHr').textContent = heartReading; $('ecgHr').toggleAttribute('data-wide', heartReading.length >= 3);
+  $('ppgHr').textContent = value(view.hrPpg); updateDial('heartDial', view.hrEcg, 40, 180); renderHeartBand(view);
   $('measurementTime').textContent = finite(view.latestTime) ? `측정 ${stamp(view.latestTime)}` : '측정 시각 미수신';
   $('sessionLabel').textContent = view.session ? `세션 ${view.session}` : '세션 대기';
   $('modelScore').textContent = value(output?.channel === 'PPG' ? ai?.input.p_ppg : ai?.input.p_ep, 2);
@@ -472,7 +513,6 @@ function renderHeartBand(view) {
   $('heartReferenceBand').toggleAttribute('hidden', !reference);
   $('heartReferenceMark').toggleAttribute('hidden', !reference);
   current.toggleAttribute('hidden', !reference || !finite(view.hrEcg));
-  $('heartBandLegend').hidden = !reference;
   $('heartBandComparison').dataset.state = view.state.kind;
   $('heartBandComparison').textContent = `모델 ${view.state.name}`;
   $('heartDelta').textContent = finite(band?.delta) ? `${band.delta > 0 ? '+' : ''}${value(band.delta, 1)} BPM` : '··';
@@ -483,15 +523,11 @@ function renderHeartBand(view) {
   }
   if (!reference) {
     $('heartReferenceText').textContent = view.baseline === 'ready' ? '기준 평균 미수신' : '기준 평균 수신 대기';
-    $('heartBandBasis').textContent = view.baseline === 'ready' ? '기준 평균이 없는 기록은 색상을 표시하지 않습니다.' : '';
-    $('heartBandBasis').hidden = !$('heartBandBasis').textContent;
     $('heartReferenceDetail').textContent = '실제 기준 평균과 유효한 모델 판정 기록이 필요합니다.';
     $('heartDial').setAttribute('aria-label', finite(view.hrEcg) ? `ECG 심박수 ${value(view.hrEcg)} BPM, 기준 평균 미수신` : 'ECG 심박수 수신 대기');
     return;
   }
   $('heartReferenceText').textContent = `기준 ${value(reference.mean_bpm, 1)} BPM`;
-  $('heartBandBasis').hidden = false;
-  $('heartBandBasis').textContent = {model: '관측한 주의·졸음 평균 편차 반영', overlap: '모델 구간 겹침 · 기준 편차 참고색', reference: '기준 ±10%·20% 참고색 · 판정 별도'}[band.basis];
   if (!finite(view.hrEcg)) $('heartBandComparison').textContent += ' · 현재 심박수 대기';
   else if (band.comparison) $('heartBandComparison').textContent += band.comparison === 'aligned' ? ' · 색상 경향 일치' : ' · 심박 편차와 다름';
   $('heartReferenceDetail').textContent = `${stamp(reference.start_s)}–${stamp(reference.end_s)}의 유효 30초 창 ${reference.clean_windows}개 평균입니다. 주황 편차 ±${value(band.orange, 1)}, 빨강 편차 ±${value(band.red, 1)} BPM. ` +
@@ -602,7 +638,9 @@ $('rewindFile').onclick = () => { stopPlayback(); board.reset(); position = 0; r
 $('backToLocal').onclick = () => { showServer(); poll(); };
 try { if (localStorage.getItem('jberry.replayPanel') === 'closed') $('replayPanel').open = false; } catch (_) { /* Storage may be disabled. */ }
 function rememberReplayPanel() {
-  $('foldLabel').textContent = $('replayPanel').open ? '접기' : '펼치기';
+  const open = $('replayPanel').open;
+  $('foldLabel').textContent = open ? '▴' : '▾';
+  $('replayPanel').querySelector('summary').title = `설정·재생 제어 ${open ? '접기' : '펼치기'}`;
   try { localStorage.setItem('jberry.replayPanel', $('replayPanel').open ? 'open' : 'closed'); } catch (_) { /* Display only. */ }
 }
 $('replayPanel').querySelector('summary').onclick = event => {
