@@ -203,3 +203,19 @@ def test_blf_scenario_uses_company_mapping(tmp_path):
                                                 data=data))
     a = build_can_assist(path)
     assert window_flags(a, [10, 20, 29]) == [False, True, False]
+
+
+def test_scenario_script_make_check_and_e2e(tmp_path):
+    import subprocess
+    script = ROOT / 'scripts/can_sim_scenario.py'
+    out = tmp_path / 'warn.jsonl'
+    run = lambda *a: subprocess.run([sys.executable, str(script), *a], capture_output=True, text=True, check=True).stdout
+    run('make', str(out), '--minutes', '8')
+    checked = run('check', str(out), '--until', '60')
+    assert 'can_drowsy=True   원인=lane' in checked and 'lane_suppressed' in checked
+    e2e = run('e2e', str(out), '--seconds', '450')
+    assert '근거 can' in e2e and '근거 persistence' in e2e
+    bio = tmp_path / 'bio'
+    run('bio', str(bio), '--minutes', '1')
+    from driver_state.local_recordings import RecordingCatalog
+    assert len(RecordingCatalog(bio).refresh()['recordings']) == 1

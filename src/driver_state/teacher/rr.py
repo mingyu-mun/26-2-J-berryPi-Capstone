@@ -99,8 +99,11 @@ def flag_abnormal(rr: np.ndarray, jump: float) -> np.ndarray:
     return bad
 
 
-def extract_rr(rec: Recording, spec: TeacherSpec, channel: str = "ecg") -> RRSeries:
-    """channel="ppg": 맥박 간격(PRV). 적응 최소 간격으로 찾은 수축기 최고점을 ±80 ms 안에서 포물선 보간."""
+def extract_rr(rec: Recording, spec: TeacherSpec, channel: str = "ecg", rpeak_threshold: str = "global") -> RRSeries:
+    """channel="ppg": 맥박 간격(PRV). 적응 최소 간격으로 찾은 수축기 최고점을 ±80 ms 안에서 포물선 보간.
+
+    rpeak_threshold: ECG R-peak 높이 임계 ("global" 기존·학습용, "rolling" 실시간용 과거 블록 중앙값).
+    """
     ins = _input_spec(spec, rec)
     filt, raw = prepare_channel(rec.signals[channel], rec.fs[channel], channel, ins, rec.prefiltered)
     fs = spec.fs
@@ -111,7 +114,7 @@ def extract_rr(rec: Recording, spec: TeacherSpec, channel: str = "ecg") -> RRSer
         pw = pw - pw.min()                       # refine_peaks 는 |x| 최대를 찾으므로 양수로
         beat_t = refine_peaks(pw, peaks, fs, search_sec=0.08) / fs if len(peaks) else np.zeros(0)
     else:
-        peaks = detect_ecg_peaks(filt, fs)
+        peaks = detect_ecg_peaks(filt, fs, rpeak_threshold)
         # 정밀 위치는 QRS 대역(5–25 Hz) 신호로 잡는다 (기저선 영향 제거, 극성 무관)
         sos = butter(3, [5.0, min(25.0, 0.45 * fs)], btype="band", fs=fs, output="sos")
         qrs = sosfiltfilt(sos, filt)
@@ -135,6 +138,8 @@ def extract_rr(rec: Recording, spec: TeacherSpec, channel: str = "ecg") -> RRSer
         labels = np.full(n_sec, -1, np.int64)
     meta = {k: v for k, v in rec.meta.items() if k != "path"}
     meta["rr_channel"] = channel
+    if channel == "ecg":
+        meta["rpeak_threshold"] = rpeak_threshold
     return RRSeries(rec.dataset_id, rec.subject_id, rec.session_id, rec.group, rec.t0, duration,
                     beat_t, rr, abnormal, block_ok, labels, rec.is_rest, meta)
 

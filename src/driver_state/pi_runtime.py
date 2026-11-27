@@ -72,6 +72,8 @@ def load_config(path):
         raise ValueError('explicit experimental causal feature configuration is required')
     if config['inference'].get('threads',1) not in (1,2,3,4):
         raise ValueError('invalid torch thread count')
+    if config['inference'].get('rpeak_threshold','global') not in ('global','rolling'):
+        raise ValueError('inference.rpeak_threshold must be global or rolling')
     return config
 
 

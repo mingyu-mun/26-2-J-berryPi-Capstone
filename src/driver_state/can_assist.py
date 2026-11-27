@@ -115,7 +115,7 @@ def _read_blf(path):
 
 
 def synthetic_highway(duration_s, *, deviation_every_s=30.0, first_deviation_s=20.0, lane_change_every_s=60.0,
-                      deviation_hold_s=1.2, angle_deg=5.2, normal_hold_s=0.2, speed_kmh=100):
+                      deviation_hold_s=1.2, angle_deg=5.2, normal_hold_s=0.2, speed_kmh=100, steering_step_ms=10):
     """Unity 대체 합성 고속도로 주행 (시연·테스트용, 성능 근거 아님).
 
     - 10 ms 조향, 100 ms 속도. 시작 시 LaneSafe_indi=4(Green), Careless_Warn=0, 방향지시등 0.
@@ -157,6 +157,8 @@ def synthetic_highway(duration_s, *, deviation_every_s=30.0, first_deviation_s=2
             yield CanSample(ms * 1000 + 1000, codes=changed)
         if ms % 100 == 0:
             yield CanSample(ms * 1000 + 2000, speed=speed_kmh, has_speed=True)
+        if ms % steering_step_ms:
+            continue
         if steer is None:
             steer = angle_deg if 100 <= ms % 1500 < 100 + normal_hold_s * 1000 else 0.0
         yield CanSample(ms * 1000 + 5000, speed=speed_kmh, steer=steer, has_speed=True, has_steer=True)

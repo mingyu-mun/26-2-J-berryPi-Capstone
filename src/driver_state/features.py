@@ -20,11 +20,37 @@ def _bandpass(x: np.ndarray, fs: float, lo: float, hi: float) -> np.ndarray:
     return sosfiltfilt(sos, x)
 
 
-def detect_ecg_peaks(ecg: np.ndarray, fs: float) -> np.ndarray:
-    """간이 R-peak 검출: 5–15 Hz 대역통과 → 제곱 → 최소 간격 0.3초 조건의 peak."""
+def rolling_peak_height(e: np.ndarray, fs: float, block_s: float = 10.0, history: int = 8) -> np.ndarray:
+    """표본마다의 R-peak 높이 임계 (과거 전용).
+
+    block_s 초 블록마다 99 백분위를 구하고, 블록 k 의 임계 = 0.3 × (블록 k-history … k-1 의 99 백분위 중앙값).
+    블록 k 자신과 그 뒤 신호는 쓰지 않으므로, 녹음을 어디서 잘라도 이미 지난 블록의 임계는 바뀌지 않는다.
+    중앙값이라 초반 잡음 블록 몇 개가 임계를 끌어올리지 못한다. 첫 블록(과거 없음)만 자기 블록 값을 쓴다 (워밍업).
+    """
+    n = max(1, int(round(block_s * fs)))
+    p99 = np.array([np.percentile(e[i:i + n], 99) for i in range(0, len(e), n)])
+    height = np.empty(len(e))
+    for k in range(len(p99)):
+        past = p99[max(0, k - history):k] if k else p99[:1]
+        height[k * n:(k + 1) * n] = 0.3 * np.median(past)
+    return height
+
+
+def detect_ecg_peaks(ecg: np.ndarray, fs: float, threshold: str = "global") -> np.ndarray:
+    """간이 R-peak 검출: 5–15 Hz 대역통과 → 제곱 → 최소 간격 0.3초 조건의 peak.
+
+    threshold="global": 높이 임계 = 0.3 × 신호 전체 99 백분위 (학습·오프라인 평가에 쓴 기존 방식).
+    threshold="rolling": rolling_peak_height (실시간용, 과거 10초 블록들만 사용).
+    """
     f = _bandpass(ecg, fs, 5.0, 15.0)
     e = f ** 2
-    peaks, _ = find_peaks(e, distance=int(_MIN_IBI * fs), height=0.3 * np.percentile(e, 99))
+    if threshold == "rolling":
+        height = rolling_peak_height(e, fs)
+    elif threshold == "global":
+        height = 0.3 * np.percentile(e, 99)
+    else:
+        raise ValueError(f"unknown R-peak threshold mode: {threshold}")
+    peaks, _ = find_peaks(e, distance=int(_MIN_IBI * fs), height=height)
     return peaks
 
 
