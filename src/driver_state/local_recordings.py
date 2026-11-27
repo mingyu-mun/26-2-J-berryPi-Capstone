@@ -37,7 +37,8 @@ class RecordingCatalog:
                 if path.stat().st_size > 16384:
                     raise ValueError('recording.json은 16KB 이하여야 합니다.')
                 meta = json.loads(path.read_text(encoding='utf-8-sig'))
-                candidates.append((path.parent, meta['ecg'], meta['ppg'], meta['meta'], meta.get('title', path.parent.name)))
+                candidates.append((path.parent, meta['ecg'], meta['ppg'], meta['meta'], meta.get('title', path.parent.name),
+                                   demo_fields(meta)))
                 folders.discard(path.parent)
             except (OSError, ValueError, KeyError, TypeError, LibraryError) as exc:
                 errors.append(f'{path.name}: {exc}')
@@ -63,10 +64,10 @@ class RecordingCatalog:
                     metas=declared
             if len(ecgs) == len(ppgs) == len(metas) == 1:
                 candidates.append((folder, str(ecgs[0].relative_to(folder)), str(ppgs[0].relative_to(folder)),
-                                   str(metas[0].relative_to(folder)), folder.name))
+                                   str(metas[0].relative_to(folder)), folder.name, demo_fields({})))
             else:
                 errors.append(f'{folder.name}: 원본 쌍·meta.json이 여러 개이거나 빠졌습니다. recording.json으로 지정하세요.')
-        for folder, ecg, ppg, meta, title in candidates[:100]:
+        for folder, ecg, ppg, meta, title, demo in candidates[:100]:
             try:
                 paths = {key: self.inside(folder / value) for key, value in dict(ecg=ecg, ppg=ppg, meta=meta).items()}
                 if paths['meta'].stat().st_size > 65536:
@@ -79,7 +80,7 @@ class RecordingCatalog:
                 identifier = hashlib.sha256(json.dumps(signature, sort_keys=True).encode()).hexdigest()[:32]
                 entries[identifier] = dict(id=identifier, title=str(title)[:120], paths=paths, rates=rates,
                     source_session_id=str(info.get('session_id', folder.name)),
-                    path=str(folder.relative_to(self.root)) or '.', signature=signature)
+                    path=str(folder.relative_to(self.root)) or '.', signature=signature, **demo)
             except (OSError, ValueError, KeyError, TypeError, LibraryError) as exc:
                 errors.append(f'{folder.name}: {exc}')
         self.entries = entries
@@ -88,7 +89,10 @@ class RecordingCatalog:
 
     @staticmethod
     def public(entry):
-        return {k: entry[k] for k in ('id', 'title', 'rates', 'source_session_id', 'path')}
+        public = {k: entry[k] for k in ('id', 'title', 'rates', 'source_session_id', 'path')}
+        # Demo clip fields only when the manifest declares them, so existing records keep their exact shape.
+        public.update({k: entry[k] for k in ('fast_forward_s', 'source_start_s') if entry.get(k) is not None})
+        return public
 
     def get(self, identifier):
         if not isinstance(identifier,str):
@@ -97,6 +101,24 @@ class RecordingCatalog:
         if identifier not in self.entries:
             raise LibraryError('기록이 없거나 파일이 변경됐습니다. 목록을 새로고침하세요.', 404)
         return self.entries[identifier]
+
+
+def demo_fields(manifest):
+    """Optional demo-clip fields of recording.json (scripts/make_demo_replays.py).
+
+    fast_forward_s: judgment replay processes the clip's first N seconds without waiting
+    (fills the 300 s long-scale features and state-machine dwell times with real samples).
+    source_start_s: the clip's start in the source recording's clock, for display/sync only.
+    """
+    fields = dict(fast_forward_s=None, source_start_s=None)
+    for key in fields:
+        value = manifest.get(key)
+        if value is None:
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+            raise ValueError(f'recording.json의 {key}는 0 이상의 숫자여야 합니다.')
+        fields[key] = float(value)
+    return fields
 
 
 class RawRecording:

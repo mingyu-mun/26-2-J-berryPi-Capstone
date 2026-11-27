@@ -37,7 +37,7 @@ class LocalReplay:
         self.user = self.recording = self.profile = self.candidate = None
         self.state = dict(stage='idle', mode=None, session_id=None, position_s=0., duration_s=None,
                           input_ready=False, baseline_status='waiting', clean_windows=0,
-                          speed=1., error=None, paused=False,profile_applied=False)
+                          speed=1., error=None, paused=False,profile_applied=False,fast_forward_s=None)
 
     def status(self):
         with self.lock:
@@ -55,7 +55,7 @@ class LocalReplay:
         self.condition.notify_all()
         self.state.update(session_id='local_'+uuid.uuid4().hex, position_s=0., duration_s=None,
                           input_ready=False, baseline_status='waiting', clean_windows=0,
-                          paused=False, error=None,profile_applied=False)
+                          paused=False, error=None,profile_applied=False,fast_forward_s=None)
         self.engine.begin_session(self.state['session_id'])
 
     def config(self, recording):
@@ -195,6 +195,9 @@ class LocalReplay:
                     if generation!=self.generation or self.closed:
                         return
                     self.state['duration_s']=source.duration
+                    # Calibration always runs at the chosen speed; only judgment replay skips the clip's pre-roll.
+                    fast_forward=min(recording.get('fast_forward_s') or 0.,source.duration) if self.state['mode']=='replay' else 0.
+                    self.state['fast_forward_s']=fast_forward or None
                     self.revision+=1
                 previous=time.monotonic()
                 for second in range(1,int(source.duration)+1):
@@ -205,6 +208,8 @@ class LocalReplay:
                         if generation!=self.generation or self.closed:
                             return
                         speed=self.state['speed']
+                        if fast_forward and second<=fast_forward:
+                            speed=0.   # demo clip pre-roll: real samples, processed without waiting
                         remaining=max(0.,1./speed-(time.monotonic()-previous)) if speed else 0.
                         if remaining:
                             self.condition.wait(timeout=remaining)

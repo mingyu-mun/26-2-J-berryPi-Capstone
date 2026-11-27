@@ -418,7 +418,9 @@ function render() {
   $('localControlsHint').textContent = !s.available ? '외부 송신 프로그램의 이벤트를 표시합니다. 기준 계산·적용과 수집 제어는 송신 프로그램이 담당합니다.' : active ? '재생을 일시정지·재개할 수 있습니다. 처음으로는 현재 처리 세션을 초기화합니다.' : !s.mode ? '사용자 설정·시작에서 사용자와 기준, 판정할 기록을 준비하세요. 처음으로는 처리 시작 후 사용할 수 있습니다.' : s.stage === 'baseline_ready' ? '기준 계산이 완료됐습니다. 사용자 설정·시작에서 저장하고 판정할 기록을 고르세요.' : '설정하고 시작에서 기록을 선택해 다시 처리할 수 있습니다.';
   const total = s.mode === 'calibrate' ? Math.min(s.duration_s || 600, 600) : s.duration_s;
   $('localProgress').value = s.stage === 'baseline_ready' ? 100 : total ? Math.min(100, s.position_s / total * 100) : 0;
-  $('localPosition').textContent = s.mode ? `${stamp(s.position_s)} / ${stamp(total)} · ${s.speed ? `${s.speed}배` : '가능한 빨리'}` : '설정 완료 후 기록을 처리합니다.';
+  const preroll = s.mode === 'replay' && s.fast_forward_s > 0 && s.position_s < s.fast_forward_s;
+  const sourceClock = s.mode && finite(s.recording?.source_start_s) ? ` · 원본 ${stamp(s.recording.source_start_s + s.position_s)}` : '';
+  $('localPosition').textContent = s.mode ? `${stamp(s.position_s)} / ${stamp(total)}${sourceClock} · ${preroll ? `시연 앞부분 빠르게 처리 중 (${stamp(s.fast_forward_s)}까지)` : s.speed ? `${s.speed}배` : '가능한 빨리'}` : '설정 완료 후 기록을 처리합니다.';
   $('loadLegacy').disabled = busy || !$('legacySelect').value;
   $('legacyHint').textContent = busy ? '요청을 처리하고 있습니다.' : !$('legacyUserSelect').value ? '저장 결과를 조회할 사용자를 선택해주세요.' : !$('legacySelect').value ? '조회할 저장 결과를 선택해주세요. 모델용 기준 목록과 별개입니다.' : '저장된 파형과 판정을 그대로 봅니다. 모델용 기준을 적용하지 않습니다.';
   $('playFile').disabled = !rows.length || position >= rows.length; $('stepFile').disabled = !rows.length || playing || position >= rows.length; $('rewindFile').disabled = !rows.length;
